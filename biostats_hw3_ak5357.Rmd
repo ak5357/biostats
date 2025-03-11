@@ -1,0 +1,66 @@
+---
+title: "Biostatistical Methods II Homework 3"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-03-11"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(dplyr)
+library(stringr)
+```
+
+## **Problem 1**
+
+**(50%) The following table gives data from a retrospective study between esophageal cancer and daily alcohol consumption adjusted for age.**
+
+```{r}
+# Create dataframe
+cancer_data = tibble(
+  age = c(25, 35, 45, 55, 65, 75), #age data modeled as continuous, despite categorical format from table
+  case_dac_low = c(0, 5, 21, 34, 36, 8),
+  case_dac_high = c(1, 4, 25, 42, 19, 5),
+  ctrl_dac_low = c(106, 164, 138, 139, 88, 31),
+  ctrl_dac_high = c(9, 26, 29, 27, 18, 0)
+)
+
+knitr::kable(cancer_data)
+```
+
+**(a) Fit a prospective model to the data to study the relation between alcohol consumption, age, and disease (model age as a continuous variable taking values 25, 35, 45, 55, 65, and 75). Interpret the result.**
+
+First let's pivot the table so it's easier to use.
+```{r}
+cancer_data = cancer_data |> 
+  pivot_longer(
+    cols = -age,
+    names_to = "temp",
+    values_to = "count"
+  ) |> 
+  mutate(
+    status = factor(str_extract(temp, "case|ctrl"), levels = c("ctrl", "case")),
+    dac = factor(str_extract(temp, "low|high"), levels = c("low", "high"))
+  ) |> 
+  select(-temp) |> 
+  relocate(-count)
+
+head(cancer_data)
+```
+
+If each row signified an individual rather than a group, we would use a Bernoulli model. However, since this is grouped data, we can use a binomial model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
