@@ -9,6 +9,7 @@ output: html_document
 library(tidyverse)
 library(dplyr)
 library(stringr)
+library(glmnet)
 ```
 
 ## **Problem 1**
@@ -48,19 +49,156 @@ cancer_data = cancer_data |>
 head(cancer_data)
 ```
 
-If each row signified an individual rather than a group, we would use a Bernoulli model. However, since this is grouped data, we can use a binomial model.
+Now let's fit the data using a prospective model, after slightly reshaping the data from grouped to ungrouped using the `uncount()` function.
+
+```{r}
+prosp_fit = cancer_data |> 
+  uncount(count) |> 
+  glm(status ~ dac + age, family = binomial(link = "logit"), data = _)
+
+summary(prosp_fit)
+
+```
+
+ **(b) Let Ψj be the odds ratio relating alcohol consumption and disease in the jth age group (j = 1, ..., 6). Assume different age groups have different odds. Compare the following two models:**
+ 
+**M0 : Ψj = 1 for all j;**
+
+**M1 : Ψj = Ψ (where Ψ is an unknown constant);**
+
+**(Hint: First write out the models and check if they are nested; if so, use deviance analysis to compare the two models.)**
+
+$M_0$: the odds ratio relating DAC and cancer status is 1 for all age groups, implying that DAC has no association with odds of disease in any age group.
+
+```{r}
+M0 = glm(status ~ age, # DAC excluded
+         family = binomial(link = "logit"),
+         data = uncount(cancer_data, count))
+```
 
 
+$M_1$: the odds ratio relating DAC and cancer status is the same across all age groups, implying that DAC has constant effect on the odds across all age groups.
 
+```{r}
+M1 = glm(status ~ dac + age, # no interaction btw DAC & age
+         family = binomial(link = "logit"),
+         data = uncount(cancer_data, count))
+```
 
+Yes, the models are nested because $M_0$ is just a case of $M_1$ where Ψ = 1. In R, we can see that the M1 model is the same as the M0 with one additional predictor added in. This confirms that they are nested.
 
+Let's compare M0 and M1 using deviance analysis. Since deviance can be interpreted as the likelihood ratio between a full model and a smaller p-parameter model, we can use the likelihood ratio test (LRT) here through the ANOVA function.
 
+```{r}
+anova_result = anova(M0, M1, test = "LRT")
+anova_result #show result
 
+# p-value
+anova_result$`Pr(>Chi)`
+```
 
+Based on the deviance analysis above, we can see that the deviance of M0 (902.20) is greater than the deviance of M1 (809.81). Because the $\chi^2$ statistic is very significant, with a p-value of 7.141219e-22, we can reject the null hypothesis that M1 does not provide a better fit than M0. Therefore, we can conclude that M1 fits the data significantly better than M0 does.
 
+## **Problem 2**
 
+**(50%) In a study of motor vehicle safety, 150 men and 150 women were interviewed to rate how important air conditioning and power steering were to them when they were buying a car.**
 
+**(a) Write down the _two_ fitted model equations.**
 
+In the  equations below:
 
+* $\pi_u = Pr(unimportant)$
+* $\pi_i = Pr(important)$
+* $\pi_v = Pr(very \quad important)$
 
+* $X_1$ represents male sex
+* $X_2$ represents age within range 24-40
+* $X_3$ represents age over 40
 
+$$log\left(\frac{\pi_u}{\pi_i + \pi_v}\right) = \hat\beta_{01} +  \hat\beta_1 X_1+  \hat\beta_2 X_2+  \hat\beta_3 X_3$$
+
+$$log\left(\frac{\pi_u + \pi_i}{\pi_v}\right) = \hat\beta_{02} +  \hat\beta_1 X_1+  \hat\beta_2 X_2+  \hat\beta_3 X_3$$
+
+**(b) Now we consider a model with sex and age interaction. To evaluate whether the interaction is really necessary, what test can be used based on the given information? Conduct that test by writing down the null and the alternative hypotheses, the test statistic, the p-value, and interpret your result.**
+
+To evaluate whether the interaction is really necessary, we can perform a Likelihood Ratio Test (LRT) on the model using the following hypotheses:
+
+$H_0$: The interaction term is not necessary, and the coefficients for the interaction terms are 0. Let's call this model M2.
+
+$H_1$: The interaction term is necessary, and the interaction term coefficients are not 0. Let's call this model M3.
+
+Here is the test statistic that we will use for the LRT.
+
+$\chi^2$ = Residual Deviance(Model without Interactions, M2) - Residual Deviance(Model with Interactions, M3)
+
+Recreate data table.
+```{r}
+safety_data = tibble(
+  sex = c("F", "F", "F", "M", "M", "M"),
+  age = c("18-23", "24-40", ">40", "18-23", "24-40", ">40"),
+  unim = c(26, 9, 5, 40, 17, 8),
+  im = c(12, 21, 14, 17, 15, 15),
+  vim = c(7, 15, 41, 8, 12, 18)
+) |> 
+  mutate(
+    sex = factor(sex, levels = c("F", "M")),
+    age = factor(age, levels = c("18-23", "24-40", ">40"))
+  ) |> 
+  pivot_longer(
+    cols = c(unim, im, vim),
+    names_to = "res",
+    values_to = "freq"
+  ) |> 
+  mutate(
+    res = factor(res, levels = c("unim", "im", "vim"))
+  )
+```
+
+Generate models.
+```{r}
+M2 = MASS::polr(res ~ sex + age, data = safety_data, weights = freq)
+M2 #output model summary
+  
+M3 = MASS::polr(res ~ sex * age, data = safety_data, weights = freq)
+M3 #output model summary
+```
+
+Let's see the deviance of both fits.
+```{r}
+M2$deviance
+M3$deviance
+```
+
+Now let's conduct the test.
+```{r}
+anova_safety = anova(M2, M3, test = "Chisq")
+anova_safety #output result
+```
+
+Here is the test statistic.
+```{r}
+anova_safety$`LR stat.`
+```
+
+Here is the p-value for the test.
+```{r}
+anova_safety$`Pr(Chi)`
+```
+
+Since thee p-value is above the significance level, we fail to reject the null hypothesis. We do not have enough evidence to support that the interaction term is necessary.
+
+**(c) Let $\hat\pi_U$, $\hat\pi_I$, $\hat\pi_V$ be the probability of a subject reporting “unimportant”, “important”, “very important”, respectively. Give the prediction equations for $\hat\pi_U$ and $\hat\pi_I$ based on the model fit provided in part (2b), and hence the prediction for log $\left( \frac{\hat\pi_I}{\hat\pi_U} \right)$.**
+
+$$log\left(\frac{\pi_u}{\pi_i}\right) = \hat\beta_{01} +  \hat\beta_1 X_1+  \hat\beta_2 X_2+  \hat\beta_3 X_3$$
+
+$$log\left(\frac{\pi_i}{\pi_v}\right) = \hat\beta_{02} +  \hat\beta_1 X_1+  \hat\beta_2 X_2+  \hat\beta_3 X_3$$
+
+Prediction for $\left( \frac{\hat\pi_I}{\hat\pi_U} \right)$ would be:
+
+$$\frac{\pi_i}{\pi_u} = exp \left[ -\left(\hat\beta_{01} +  \hat\beta_1 X_1+  \hat\beta_2 X_2+  \hat\beta_3 X_3\right) \right]$$
+
+**(d) What’s the interpretation of the negative coefficient −0.8175 of sexM:age> 40 of the model in part (2b)? What’s the interpretation that the coefficient −0.8175 of sexM:age> 40 of the model in part (2b) is more negative than the coefficient −0.3853 of sexM:age24 − 40?**
+
+The log odds ratio of the response is -0.8175 per unit increase in the interaction term of male sex and age over 40, all else held equal.
+
+The odds ratio of the response is lower for the interaction term of male sex and age over 40, than for that of male sex and age 24-40.

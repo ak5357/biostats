@@ -1,0 +1,150 @@
+---
+title: "Biostatistical Methods II Homework 4"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-03-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+```
+
+## **Homework 4**
+
+**Assignment Description:** The data in the table below are from an investigation into satisfaction with housing conditions in Copenhagen (Madsen 1971). Residents in selected areas living in rented homes built between 1960 and 1968 were questioned about their satisfaction and the degree of contact with other residents.
+
+| | Low satisfaction | Medium satisfaction | High satisfaction |
+| --- | --- | --- | --- |
+| Contact with others: | Low / High | Low / High | Low / High |
+| Tower block | 65 / 34 | 54 / 47 | 100 / 100 |
+| Apartment | 130 / 141 | 76 / 116 | 111 / 191 |
+| House | 67 / 130 | 48 / 105 | 62 / 104 |
+
+### **Problem 1 (20%)**
+
+###### **Summarize the data using appropriate tables of percentages to show the pair-wise associations between the levels of satisfaction and 1) contact with other residents and 2) type of housing. Comment on patterns in the associations.**
+
+Generate table using data given in assignment.
+```{r}
+df = tibble(
+  satisfaction = c("Low satisfaction", "Low satisfaction", "Medium satisfaction", "Medium satisfaction", "High satisfaction", "High satisfaction"),
+  contact = c("low", "high", "low", "high", "low", "high"),
+  tower_block = c(65, 34, 54, 47, 100, 100),
+  apartment =  c(130, 141, 76, 116, 111, 191),
+  house =  c(67, 130, 48, 105, 62, 104)
+) |> 
+  pivot_longer(
+    cols = c("tower_block", "apartment", "house"),
+    names_to = "housing_type",
+    values_to = "count"
+  ) |> 
+  mutate(
+    housing_type = str_replace(housing_type, "_", " "),
+    across(c(housing_type, contact), str_to_sentence),
+    satisfaction = factor(satisfaction, levels = c("Low satisfaction", "Medium satisfaction", "High satisfaction")),
+    contact = factor(contact, levels = c("Low", "High"))
+  )
+
+head(df)
+```
+
+Format the table with percents, row totals, and column totals.
+```{r}
+# Reframe table for visual
+summary_table = df |>   
+  pivot_wider(
+    id_cols = c(contact, housing_type),
+    names_from = satisfaction,
+    values_from = count
+  ) |> 
+  mutate(
+    Total = `Low satisfaction` + `Medium satisfaction` + `High satisfaction`,
+    housing_type = str_replace(housing_type, "_", " "),
+    across(c(housing_type, contact), str_to_sentence)
+  ) |> 
+  rename(`Housing Type` = housing_type, Contact = contact)
+
+# Format Table to add percents
+formatted_table = summary_table |> 
+  mutate(
+    `Low satisfaction` = paste0(`Low satisfaction`, " (", round(100*`Low satisfaction`/Total), "%)"),
+    `Medium satisfaction` = paste0(`Medium satisfaction`, " (", round(100*`Medium satisfaction`/Total), "%)"),
+    `High satisfaction` = paste0(`High satisfaction`, " (", round(100*`High satisfaction`/Total), "%)"),
+  )
+
+# Finish formatting table manually
+formatted_table[2, 1] = ""
+formatted_table[3, 1] = ""
+formatted_table[5, 1] = ""
+formatted_table[6, 1] = ""
+formatted_table[7, 1] = "**Total**"
+formatted_table[7, 2] = ""
+formatted_table[7, 3] = as.character(sum(summary_table$`Low satisfaction`))
+formatted_table[7, 4] = as.character(sum(summary_table$`Medium satisfaction`))
+formatted_table[7, 5] = as.character(sum(summary_table$`High satisfaction`))
+formatted_table[7, 6] = sum(summary_table$Total)
+
+formatted_table |> 
+  knitr::kable()
+```
+
+**Commenting on Patterns:**
+
+It appears that overall, there are more people with High contact in the study population than those with Low contact. Among these, people with High contact appear to have higher levels of satisfaction than those with Low contact. This pattern could suggest that people in the study population prefer living situations with more opportunities for social connection. Humans are, after all, social creatures.
+
+```{r echo = FALSE}
+df |> 
+  ggplot(aes(x = contact, y = count, fill = satisfaction)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", lwd = 0.2) + 
+  #facet_grid(. ~ housing_type) + 
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  labs(title = "Satisfaction Levels by Contact and Housing Type",
+       x = "Contact Level",
+       y = "Count",
+       fill = "Satisfaction") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title = element_text(face = "bold", size = 8))
+```
+
+This pattern appears to be consistent among those living in Apartment or Tower block housing. However, for those living in Houses, people with High contact seem to have relatively lower satisfaction levels compared with people with Low contact. Perhaps this could suggest that people living in multi-family housing prefer contact more than those living in single-family homes. This assumption would make sense, because individuals who enjoy high contact and social interaction may seek out multi-family housing, and vice versa.
+
+```{r, echo = FALSE}
+df |> 
+  ggplot(aes(x = contact, y = count, fill = satisfaction)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black", lwd = 0.2) + 
+  facet_grid(. ~ housing_type) + 
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  labs(title = "Satisfaction Levels by Contact and Housing Type",
+       x = "Contact Level",
+       y = "Count",
+       fill = "Satisfaction") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+        axis.title = element_text(face = "bold", size = 8))
+```
+
+### **Problem 2 (30%)**
+
+###### **Use nominal logistic regression model for the associations between response variable, the levels of satisfaction, and the other two variables. Obtain a model that summarizes the patterns in the data. Describe your findings (the pattern in the associations, odds ratios with 95% confidence intervals, goodness-of-fit). (Hint: use dummy variable for house types.) Is there interaction of contact level by house type?**
+
+
+
+### **Problem 3 (30%)**
+
+###### **As the response has ordinal categories, fit proportional odds model to the data that include the same variables as used in the nominal logistic model obtained in (ii). What does the fitted model tell?**
+
+response
+
+### **Problem 4 (20%)**
+
+###### **Calculate Pearson residuals from the proportional odds model for ordinal response to find where the largest discrepancies are between the observed frequencies and expected frequencies estimated from the model.**
+
+response
+
+
+
