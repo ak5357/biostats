@@ -46,7 +46,8 @@ df = tibble(
     housing_type = str_replace(housing_type, "_", " "),
     across(c(housing_type, contact), str_to_sentence),
     satisfaction = factor(satisfaction, levels = c("Low satisfaction", "Medium satisfaction", "High satisfaction")),
-    contact = factor(contact, levels = c("Low", "High"))
+    contact = factor(contact, levels = c("Low", "High")),
+    housing_type = as.factor(housing_type)
   )
 
 head(df)
@@ -132,19 +133,144 @@ df |>
 
 ###### **Use nominal logistic regression model for the associations between response variable, the levels of satisfaction, and the other two variables. Obtain a model that summarizes the patterns in the data. Describe your findings (the pattern in the associations, odds ratios with 95% confidence intervals, goodness-of-fit). (Hint: use dummy variable for house types.) Is there interaction of contact level by house type?**
 
+First let's generate the model _with_ interactions and observe the model summary.
+```{r}
+nom_fit_int = nnet::multinom(satisfaction ~ contact * housing_type, data = df, weights = count)
+summary(nom_fit_int)
+```
 
+Once we have another model, we can use the residual deviance and AIC to compare their goodness-of-fit. For now, let us assess the $\beta$ coefficient estimates and confidence intervals to find the odds ratios for each $y$ level.
+
+```{r}
+nom_fit_int_summary = broom::tidy(nom_fit_int) |> 
+  mutate(
+    ci.ll = estimate - 1.96*std.error,
+    ci.ul = estimate + 1.96*std.error,
+    or = exp(estimate),
+    or.ci.ll = exp(ci.ll),
+    or.ci.ul = exp(ci.ul),
+    `Odds Ratio` = paste0(round(or, 2)),
+    `95% Confidence Interval` = paste0("(", round(or.ci.ll, 2), ", ", round(or.ci.ul, 2), ")"),
+    `p-value` = round(p.value, 2),
+    `Significant` = ifelse(p.value < 0.05, "✓", "")
+  )
+
+nom_fit_int_summary |> 
+  select(y.level, term, estimate, `Odds Ratio`, `95% Confidence Interval`, `p-value`, `Significant`) |> 
+  knitr::kable()
+```
+
+Based on the summaries of the model, we can see that our nominal regression model has given us the following two equations with the $\beta$ coefficient estimates below.
+
+**Equations:**
+
+(1) $log\left(\frac{\pi_{medium}}{\pi_{low}}\right) = \beta_{01} + \beta_{11}X_1 + \beta_{21}X_2 + \beta_{31}X_3 + \beta_{41}X_4 + \beta_{51}X_5$ 
+
+(2) $log\left(\frac{\pi_{high}}{\pi_{low}}\right) = \beta_{02} + \beta_{12}X_1+ \beta_{22}X_2 + \beta_{32}X_3 + \beta_{412}X_4 + \beta_{52}X_5$ 
+
+**Coefficient interpretations:** Keeping in mind that the $\beta$ coefficient estimates do not represent odds ratios, but are part of the equation estimating the log odds of a certain level of satisfaction.
+
+| Coefficient | Estimate | Interpretation of Accompanying Predictor |
+| --- | --- | --- |
+| $\beta_{01}$ | `r nom_fit_int_summary[1, ]$estimate` | Medium satisfaction equation intercept |
+| $\beta_{11}$ | `r nom_fit_int_summary[2, ]$estimate` | $X_1 = 1$: contact is High |
+| $\beta_{21}$ | `r nom_fit_int_summary[3, ]$estimate` | $X_2 = 1$: housing_type is House |
+| $\beta_{31}$ | `r nom_fit_int_summary[4, ]$estimate` | $X_3 = 1$: housing_type is Tower block |
+| $\beta_{41}$ | `r nom_fit_int_summary[5, ]$estimate` | $X_4 = 1$: contact is High and housing_type is House |
+| $\beta_{51}$ | `r nom_fit_int_summary[6, ]$estimate` | $X_5 = 1$: contact is High and housing_type is Tower block |
+| $\beta_{02}$ | `r nom_fit_int_summary[7, ]$estimate` | High satisfaction equation intercept |
+| $\beta_{12}$ | `r nom_fit_int_summary[8, ]$estimate` | $X_1 = 1$: contact is High |
+| $\beta_{22}$ | `r nom_fit_int_summary[9, ]$estimate` | $X_2 = 1$: housing_type is House |
+| $\beta_{32}$ | `r nom_fit_int_summary[10, ]$estimate` | $X_3 = 1$: housing_type is Tower block |
+| $\beta_{42}$ | `r nom_fit_int_summary[11, ]$estimate` | $X_4 = 1$: contact is High and housing_type is House |
+| $\beta_{52}$ | `r nom_fit_int_summary[12, ]$estimate` | $X_5 = 1$: contact is High and housing_type is Tower block |
+
+Next, let's generate the model _without_ interactions and observe the model summary.
+```{r}
+nom_fit = nnet::multinom(satisfaction ~ contact + housing_type, data = df, weights = count)
+summary(nom_fit)
+```
+
+Let us once again assess the $\beta$ coefficient estimates and confidence intervals to find the odds ratios for each $y$ level.
+
+```{r}
+nom_fit_summary = broom::tidy(nom_fit) |> 
+  mutate(
+    ci.ll = estimate - 1.96*std.error,
+    ci.ul = estimate + 1.96*std.error,
+    or = exp(estimate),
+    or.ci.ll = exp(ci.ll),
+    or.ci.ul = exp(ci.ul),
+    `Odds Ratio` = paste0(round(or, 2)),
+    `95% Confidence Interval` = paste0("(", round(or.ci.ll, 2), ", ", round(or.ci.ul, 2), ")"),
+    `p-value` = round(p.value, 2),
+    `Significant` = ifelse(p.value < 0.05, "✓", "")
+  )
+
+nom_fit_summary |> 
+  select(y.level, term, estimate, `Odds Ratio`, `95% Confidence Interval`, `p-value`, `Significant`) |> 
+  knitr::kable()
+```
+
+**Pattern in associations:** For the model with interactions, only four of the twelve beta coefficient estimates are statistically significant. Furthermore, it is important to note that only one of the four coefficient estimates for the interaction terms are significant, the one pertaining to odds for high satisfaction among subjects with High contact and House housing type. Although the residual deviance is very slightly lower and AIC is very slightly higher in the interactions model compared to the model without interactions, I would say this tiny improvement in relative goodness-of-fit measures does not justify the inclusion of four additional predictors into the model, three of which are not even significant.
+
+For the model without interactions, six of the eight predictors are significant. Based on the calculated odds ratio estimates, we can see that the Tower block housing type has the highest odds ratio for both the Medium satisfaction equation and the High satisfaction equation. For the House housing type, it appears that with all else held equal those with Houses have 0.74 times the odds of reporting High satisfaction as opposed to Low. High contact is a statistically significant predictor and has odds ratio above 1 for both equations, and is higher for the High satisfaction equation, which tells us that with all else held equal, people with high contact have the highest odds of reporting High satisfaction, as opposed to either Low or Medium.
+
+**Goodness of fit:** Now let's compute the goodness-of-fit using a chi-squared test with deviance residuals.
+
+```{r}
+# Residual deviance and degrees of freedom
+dev_resid_nom = deviance(nom_fit)
+df_resid_nom = nom_fit$edf
+
+# Compute the p-value for goodness-of-fit
+p_value_deviance_nom = pchisq(dev_resid_nom, df_resid_nom, lower.tail = FALSE)
+
+p_value_deviance_nom
+```
+
+The p-value is extremely low, which suggests that this model does not fit the data well. Perhaps the model is missing key predictor variables that influence satisfaction.
 
 ### **Problem 3 (30%)**
 
 ###### **As the response has ordinal categories, fit proportional odds model to the data that include the same variables as used in the nominal logistic model obtained in (ii). What does the fitted model tell?**
 
-response
+Let us fit a proportional odds model to the data using the same variables.
+```{r}
+df_base = as.data.frame(df)
+polr_fit = MASS::polr(satisfaction ~ contact + housing_type, data = df_base, weights = count)
+summary(polr_fit)
+```
+
+The fitted model shows a positive coefficient for High contact, meaning that higher contact increases satisfaction. This supports our findings from the previous model. The odds of being in a higher satisfaction category increase by a factor of exp(0.2524), or `r round(exp(0.2524), 2)`. We see a negative coefficient for House housing type, meaning that living in a house reduces satisfaction compared with living in an apartment (our reference category). Here the odds decrease by a factor of exp(-0.2353), or `r round(exp(0.2353), 2)`. Finally, there is a positive coefficient for living in a tower block, meaning the odds for a higher category of satisfaction increase by exp(0.5010), or `r round(exp(0.5010), 2)`.
+
+For the intercepts, we see that the log-odds threshold between Low vs. Medium or High satisfaction is -0.4964, and the log odds threshold Low or Medium vs. High satisfaction is 0.6161.
+
+Examining goodness-of-fit, we can see that the fit has a residual deviance of 3610.286 and AIC of 3620.286. The residual deviance is higher and AIC is slightly lower for this model than for the nominal logistic model without interactions from the previous question, suggesting that it offers a worse fit.
 
 ### **Problem 4 (20%)**
 
 ###### **Calculate Pearson residuals from the proportional odds model for ordinal response to find where the largest discrepancies are between the observed frequencies and expected frequencies estimated from the model.**
 
-response
+```{r}
+df_pred = df |> 
+  bind_cols(predict(polr_fit, type = "probs")) |> 
+  mutate(
+    expected_low = `Low satisfaction` * count,
+    expected_med = `Medium satisfaction` * count,
+    expected_hig = `High satisfaction` * count,
+    pearson_low = (count - expected_low) / sqrt(expected_low),
+    pearson_med = (count - expected_med) / sqrt(expected_med),
+    pearson_hig = (count - expected_hig) / sqrt(expected_hig)
+  )
 
+df_pred |> 
+  #select(satisfaction, count, contains(c("expected", "pearson"))) |> 
+  arrange(-abs(pearson_low)) |> 
+  knitr::kable(digits = 2) |> 
+  kableExtra::kable_styling(font_size = 8)
+```
 
+From the results, it’s clear that for each satisfaction level, whether it’s "Low," "Medium," or "High" satisfaction, the residuals are positive. This indicates that the observed frequencies for each satisfaction category are higher than what the model expected. These positive discrepancies suggest that the model may be underestimating the number of people in each satisfaction category.
 
+By focusing on the largest Pearson residuals, we can identify where the model's predictions are off the most. The largest discrepancies occur in the "High satisfaction" category, where observed counts significantly exceed the expected values. This could point to a need for adjusting the model to better account for the higher-than-expected satisfaction levels in the population.
