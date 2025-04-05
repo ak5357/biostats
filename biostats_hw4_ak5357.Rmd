@@ -265,6 +265,7 @@ df_pred = df |>
   )
 
 df_pred |> 
+  
   #select(satisfaction, count, contains(c("expected", "pearson"))) |> 
   arrange(-abs(pearson_low)) |> 
   knitr::kable(digits = 2) |> 

@@ -1,0 +1,149 @@
+---
+title: "Biostatistical Methods II Homework 5"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(gtsummary)
+library(pscl)
+```
+
+
+#### **1. Researchers examined a large number of fish to determine the prevalence of parasites. The dataset (parasite.txt) includes the variables Intensity (i.e., the number of parasites), Area (a categorical variable), Year (to be treated as categorical), and Length of the fish.**
+
+```{r}
+# Read in data
+fish = read_tsv("data/HW5-parasite.txt") |> 
+  select(-contains("omit")) |> 
+  janitor::clean_names() |> 
+  suppressMessages() |> 
+  mutate(across(c(area, year), as.factor))
+
+# Preview dataset
+head(fish)
+
+# Summary statistics
+tbl_summary(
+  fish,
+  statistic = list(
+    all_continuous() ~ "Range: {min} - {max} | Mean: {mean} (SD: {sd})",
+    all_categorical() ~ "{n} ({p}%)"))
+```
+
+#### **(a) (30%) Fit a Poisson model with log link to the data with area, year, and length as predictors. Interpret each model parameter estimates.**
+
+The goal of this model seems to be to understand potential associations between the predictors and response, rather than to predict. Since we are not aiming for a predictive model, we do not need to use a train / test split.
+
+Each coefficient below represents the log change in expected parasite intensity per unit increase in the corresponding predictor, holding the other predictors constant.
+
+```{r}
+# Train Poisson fit with log link function
+pois_fit = glm(intensity ~ year + length + area,
+               data = fish,
+               family = poisson(link = "log"))
+
+# Get model summary
+summary(pois_fit)
+```
+
+**Interpreting model parameter estimates:**
+
+All predictors were deemed statistically significant by the model, as they all have p-values much lower than 0.05. Interpretations for the coefficients are below.
+
+**Intercept: $\beta_0$ = `r pois_fit$coefficients[1] |> round(2)`.** When all predictors are either 0 or at their reference setting, the expected parasite intensity is exp(`r pois_fit$coefficients[1] |> round(2)`), or `r exp(pois_fit$coefficients[1]) |> round(2)`. Essentially, the expected baseline parasite intensity for the reference fish group (in 1999, in area 1, and with length 0).
+
+**Year2000: $\beta_1$ = `r pois_fit$coefficients[2] |> round(2)`.** The year being 2000 as compared with the reference category year of 1999 is associated with a multiplicative change of exp(`r pois_fit$coefficients[2] |> round(2)`), or `r exp(pois_fit$coefficients[2]) |> round(2)`, with all other predictors held equal.
+
+**Year2001: $\beta_2$ = `r pois_fit$coefficients[3] |> round(2)`.** The year being 2001 as compared with the reference category year of 1999 is associated with a multiplicative change of exp(`r pois_fit$coefficients[3] |> round(2)`), or `r exp(pois_fit$coefficients[3]) |> round(2)`, with all other predictors held equal.
+
+**Length: $\beta_3$ = `r pois_fit$coefficients[4] |> round(2)`.** A 1-unit increase in length of the fish is associated with a multiplicative change of exp(`r pois_fit$coefficients[4] |> round(2)`), or `r exp(pois_fit$coefficients[4]) |> round(2)`, with all other predictors held equal.
+
+**Area2: $\beta_4$ = `r pois_fit$coefficients[5] |> round(2)`.** The area being 2 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r pois_fit$coefficients[5] |> round(2)`), or `r exp(pois_fit$coefficients[5]) |> round(2)`, with all other predictors held equal.
+
+**Area3: $\beta_5$ = `r pois_fit$coefficients[5] |> round(2)`.** The area being 3 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r pois_fit$coefficients[6] |> round(2)`), or `r exp(pois_fit$coefficients[6]) |> round(2)`, with all other predictors held equal.
+
+**Area4: $\beta_6$ = `r pois_fit$coefficients[5] |> round(2)`.** The area being 4 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r pois_fit$coefficients[7] |> round(2)`), or `r exp(pois_fit$coefficients[7]) |> round(2)`, with all other predictors held equal.
+
+#### **(b) (30%) Test for goodness of fit of the model in (a) and draw your conclusions.**
+
+Let's perform a Pearson Chi-squared Test to test the goodness of fit of the model.
+
+```{r}
+# Pearson Statistic
+G = sum(residuals(pois_fit, type = "pearson")^2)
+
+# Degrees of Freedom
+df = nobs(pois_fit) - length(pois_fit$coefficients)
+
+# Compute p-value
+1-pchisq(G, df)
+```
+
+The p-value is extremely low. This means that the model does not fit the data well, at least by the Pearson test. It appears that the observed residuals are very large.
+
+#### **(c) (40%) Researchers suspect that there may be two strains of fish, one that is susceptible to parasites and one that is not. Without knowing which fish are susceptible, this could be regarded as a zero-inflated model. Building on the model in (a) (using the same predictors), fit an appropriate model to the data that can account for extra zeros. Provide an interpretation for each model parameter in terms of the problem.**
+
+The model below allows us to account for excess zeros in parasite intensity. It assumes that some fish are not susceptible to parasites, while the rest of the fish have a parasite intensity pattern which follows a Poisson distribution.
+
+```{r}
+# Train Zero-Inflated Poisson Model
+zip_fit = zeroinfl(intensity ~ year + length + area | year + length + area,
+               data = fish,
+               dist = "poisson")
+
+# Get Model Summary
+summary(zip_fit)
+
+zip_fit$coefficients$count[1]
+zip_fit$coefficients$zero[1]
+```
+
+**Interpreting model parameter estimates:**
+
+**_COUNT MODEL COEFFICIENTS._** These coefficients reflect model expectations for fish who are susceptible to the parasite and whose parasite intensity patterns follow a poisson distribution.
+
+**Intercept: $\beta_01$ = `r zip_fit$coefficients$count[1] |> round(2)`.** The coefficient represents the log baseline expected intensity for the reference fish group (in 1999, in area 1, and with length 0). The baseline is exp(`r zip_fit$coefficients$count[1] |> round(2)`), or `r exp(zip_fit$coefficients$count[1]) |> round(2)`.
+
+**Year2000: $\beta_11$ = `r zip_fit$coefficients$count[2] |> round(2)`.** The parasite intensity is exp(`r zip_fit$coefficients$count[2] |> round(2)`), or `r exp(zip_fit$coefficients$count[2]) |> round(2)` times higher in 2000 than the reference year of 1999, with all other predictors held equal.
+
+**Year2001: $\beta_21$ = `r zip_fit$coefficients$count[3] |> round(2)`.** The parasite intensity is exp(`r zip_fit$coefficients$count[3] |> round(2)`), or `r exp(zip_fit$coefficients$count[3]) |> round(2)` times higher in 2001 than the reference year of 1999, with all other predictors held equal.
+
+**Length: $\beta_31$ = `r zip_fit$coefficients$count[4] |> round(2)`.** A 1-unit increase in length of these fish is associated with a multiplicative change of exp(`r zip_fit$coefficients$count[4] |> round(2)`), or `r exp(zip_fit$coefficients$count[4]) |> round(2)` in parasite intensity, with all other predictors held equal.
+
+**Area2: $\beta_41$ = `r zip_fit$coefficients$count[5] |> round(2)`.** The area being 2 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r zip_fit$coefficients$count[5] |> round(2)`), or `r exp(zip_fit$coefficients$count[5]) |> round(2)` in parasite intensity, with all other predictors held equal.
+
+**Area3: $\beta_51$ = `r zip_fit$coefficients$count[5] |> round(2)`.** The area being 3 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r zip_fit$coefficients$count[6] |> round(2)`), or `r exp(zip_fit$coefficients$count[6]) |> round(2)` in parasite intensity, with all other predictors held equal.
+
+**Area4: $\beta_61$ = `r zip_fit$coefficients$count[5] |> round(2)`.** The area being 4 as compared with the reference category area 1 is associated with a multiplicative change of exp(`r zip_fit$coefficients$count[7] |> round(2)`), or `r exp(zip_fit$coefficients$count[7]) |> round(2)` in parasite intensity, with all other predictors held equal.
+
+**_ZERO-INFLATED MODEL COEFFICIENTS._** The following logistic regression coefficients are predicting the probability that a fish is in the "always zero" group, or the group which is not susceptible to parasites. Positive coefficients mean that a fish is more likely to be immune, whereas negative ones mean that a fish is less likely to be immune. In other words, an exponentiated coefficient above 1 means that a fish is more likely to be immune whereas below 1 means a fish is less likely to be immune.
+
+**Intercept: $\beta_02$ = `r zip_fit$coefficients$count[1] |> round(2)`.** The coefficient represents the log baseline odds of a fish being in the "always zero", or immune category for fish in the reference fish group (in 1999, in area 1, and with length 0). The baseline odds is is exp(`r zip_fit$coefficients$zero[1] |> round(2)`), or `r exp(zip_fit$coefficients$zero[1]) |> round(2)`.
+
+**Year2000: $\beta_11$ = `r zip_fit$coefficients$zero[2] |> round(2)`.** Fish in the year 2000 have exp(`r zip_fit$coefficients$zero[2] |> round(2)`), or `r exp(zip_fit$coefficients$zero[2]) |> round(2)` times odds of being in the immune group compared with fish from 1999,, with all other predictors held equal.
+
+**Year2001: $\beta_21$ = `r zip_fit$coefficients$zero[3] |> round(2)`.** Fish in the year 2001 have exp(`r zip_fit$coefficients$zero[3] |> round(2)`), or `r exp(zip_fit$coefficients$zero[3]) |> round(2)` times odds of being in the immune group compared with fish from 1999,, with all other predictors held equal.
+
+**Length: $\beta_31$ = `r zip_fit$coefficients$zero[4] |> round(2)`.** A 1-unit increase in length of these fish is associated with an odds ratio of exp(`r zip_fit$coefficients$zero[4] |> round(2)`), or `r exp(zip_fit$coefficients$zero[4]) |> round(2)` for being in the immune group, with all other predictors held equal.
+
+**Area2: $\beta_41$ = `r zip_fit$coefficients$zero[5] |> round(2)`.** The area being 2 as compared with the reference category area 1 is associated with an odds ratio of exp(`r zip_fit$coefficients$zero[5] |> round(2)`), or `r exp(zip_fit$coefficients$zero[5]) |> round(2)` for being in the immune group, with all other predictors held equal.
+
+**Area3: $\beta_51$ = `r zip_fit$coefficients$zero[5] |> round(2)`.** The area being 3 as compared with the reference category area 1 is associated with an odds ratio of of exp(`r zip_fit$coefficients$zero[6] |> round(2)`), or `r exp(zip_fit$coefficients$zero[6]) |> round(2)` for being in the immune group, with all other predictors held equal.
+
+**Area4: $\beta_61$ = `r zip_fit$coefficients$zero[5] |> round(2)`.** The area being 4 as compared with the reference category area 1 is associated with an odds ratio of exp(`r zip_fit$coefficients$zero[7] |> round(2)`), or `r exp(zip_fit$coefficients$zero[7]) |> round(2)` for being in the immune group, with all other predictors held equal.
+
+```{r eval = FALSE, include = FALSE}
+zip_coef = as_tibble(zip_fit$coefficients, rownames = "term")
+zip_coef$term = c("(Intercept)", "year2000", "year2001", "length", "area2", "area3", "area4")
+zip_coef$count_exp = exp(zip_coef$count)
+zip_coef$zero_exp = exp(zip_coef$zero)
+zip_coef = relocate(zip_coef, term, count, count_exp)
+```
+
+
