@@ -1,0 +1,271 @@
+---
+title: "Biostatistical Methods II Homework 6"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+
+library(tidyverse)
+library(dplyr)
+library(gtsummary)
+library(ggplot2)
+library(nlme)
+library(gee)
+library(lattice)
+```
+
+## **Problem 1 (40%)**
+
+**Suppose we have the following statistical model: $Y_{ij} = µ + b_i + e_{ij}$ , where $i = 1, ..., m$ and $j = 1, ..., n$, $b_i ∼ N(0, σ^2_b)$, $e_{ij} ∼ N(0, σ^2_e)$, $b_i$ and $e_{ij}$ are statistically independent for each $i$ and $j$, and $e_{ij}$ and $e_{ik}$ are statistically independent for any two values $j$, $k = 1, ..., n$ and $j \neq k$. Find the variance of $Y_{ij}$ and the covariance and correlation between any two values $Y_{ij}$ and $Y_{ik}$, $j \neq k$. Which one of the popular covariance patterns does this correspond to?**
+
+Since the $\mu$ value in the statistical model given above does not vary between different observations, we can say that the variance of $Y_{ij}$ is the sum of the variances of $b_i$ and $e_{ij}$ between the different observations.
+
+$$Var(Y_{ij}) = \sigma^2_b + \sigma^2_e$$
+
+Since $\mu$ is constant, it does not contribute to the covariance. Since $b_i$ is shared across $j$ and $k$, its variance would contribute to the covariance. However, since the residuals (e.g. $e_{ij}$ and $e_{ik}$) are independent and unique, those would not contribute to the covariance. Therefore:
+
+$$Cov(Y_{ij}, Y_{ik}) = cov(b_{i} + e_{ij}, b_{i} + e_{ik}) = \sigma^2_b$$
+
+Correlation is calculated as the covariance between two observations divided by the product of their standard deviations, as shown in the equation below. 
+
+$$corr(Y_{ij}, Y_{ik}) =\frac{Cov(Y_{ij}, Y{ik})}{\sqrt{Var(ij) \cdot Var(ik)}} $$
+
+Given the variance and covariance shown above, the correlation is the following:
+
+$$corr(Y_{ij}, Y_{ik}) = \frac{\sigma^2_b}{\sigma^2_b + \sigma^2_e}$$
+
+This model corresponds to the Compound Symmetry covariance pattern because all repeated measurements on subject $i$ have equal variance, equal pairwise covariance, and therefore equal correlation.
+
+## **Problem 2 (60%)**
+
+**A study was conducted involving 27 children, 16 boys and 11 girls. On each child, the distance (mm) from the center of the pituitary to the pterygomaxillary fissure was made at ages 8, 10, 12, and 14. The goal was to study how distance is affected by age and gender. The data file has 5 columns: (1) observation number, (2) child number (1-27), (3) age, (4) distance measurement, and (5) indicator of gender (0 =girl, 1 =boy).**
+
+Based on the summary statistics provided in the table below, we can see that there are 27 children in the study. It appears that each child was observed at four times between the ages of 8 and 14. The summary statistics for distance show the mininum, maximum, mean, and standard deviation for distance measured across all observations of all children. It appears that 44 of the 108 observations were taken of girl children participants, and the remaining 64 were for boy participants. This is all in line with the data description given in the problem.
+
+```{r}
+# Read in data
+dental = read.table("data/HW6-dental.txt", header = TRUE) |>
+  as_tibble() |> 
+  janitor::clean_names() |> 
+  mutate(
+    #child = factor(child),
+    gender = factor(gender, labels = c("girl", "boy")))
+
+# Preview dataset
+head(dental)
+
+dental |>
+  select(-index) |> 
+  tbl_summary(
+    statistic = list(all_continuous() ~ "{min} - {max} | {mean} ({sd})",
+                     all_categorical() ~ "{n} ({p}%)",
+                     all_continuous2() ~ "{min} - {max}"),
+    type = list(child ~ "continuous2"),
+    label = list(
+      child = "Child Number",
+      age = "Age",
+      distance = "Distance",
+      gender = "Gender"
+    ))
+```
+
+**(a) Make a spaghetti plot to infer how distance is affected by age and gender.**
+
+The plot below provides a visualization of the relationship between distance and age, and how that relationship might differ by gender. Based on the overall look of the spaghetti plots, including the red trend lines in each plot, we can infer that there could potentially be a positive correlation between age and distance for both genders. It also appears that the slope of this relationship could potentially be higher among boy children than among girl children, indicating that there could potentially be an interaction between the predictors gender and age. Lastly, it appears overall that the distance measurement may be larger on average in boys than in girls.
+
+Of course, this is only an initial estimate based on the visual. We would need further statistical analysis to be able to say anything for certain about whether a statistically significant relationship between age and distance can be observed in this data, and whether that relationship actually differs by gender.
+
+```{r}
+dental |> 
+  ggplot(aes(x = age, y = distance, group = child)) +
+  geom_point(color = "darkslateblue") +
+  geom_line(color = "cornflowerblue") +
+  stat_smooth(aes(group = gender), lwd = 1, method = "lm", color = "darkred", se = FALSE) +
+  facet_grid(~ gender) +
+  labs(
+    title = "Distance vs. Age and Gender",
+    subtitle = "The red lines shows general trend line for Distance vs. Age for each gender.",
+    caption = "* Distance (mm) from the center of the pituitary to the pterygomaxillary fissure.",
+    x = "Age",
+    y = "Distance (mm) *"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10)
+  )
+```
+
+**(b) Assume the model is**
+
+$$Y_{ij} = β_0 + a_i + b_0 · I_{(sex_i=0)} + b_1 · I_{(sex_i=1)} + β_1 · age_{ij} + e_{ij}$$
+
+**where $i = 1, · · · , 27$, and $j = 1, . . . , 4$; $β_0$, $β_1$ are fixed coefficients; $a_i ∼ N(0, σ^2_a)$ and $b_k ∼ N(0, σ^2_b)$ $(k = 0, 1)$ are random coefficients, and $e_{ij} ∼ N(0, σ^2_e)$ is the random error; $a_i (i =1, · · · , n)$, $b_k (k = 0, 1)$ and $e_{ij} (i = 1, . . . , n; j = 1, . . . , p)$ are mutually independent. Write the model in the marginal form.**
+
+Since there are four observations for each study participant, this violates the assumption of independence between observations. In order to account for both the variance within an individual participant's multiple observations, and the variance between the observations of different participants, we have this mixed effects model above.
+
+First let's interpret the terms of the linear mixed effects model given above.
+
+$Y_{ij}$ : The distance (mm) from the center of the pituitary to the pterygomaxillary fissure, for child $i$ and age $j$.
+
+$\beta_0$ : The baseline intercept, or expected distance when age is 0 and sex is at the reference category (0 = girl).
+
+$\beta_1$ : The fixed slops for age, describing the population-averaged distance per one-year increase in age, holding other variables constant.
+
+$\alpha_i$ : Random intercept for child $i$. Including this in the model allows each child to have their own baseline, thus accounting for individual-level differences from the population average intercept.
+
+$b_0$ and $b_1$ : Random coefficients for sex. $b_0$ applies when sex = 0 (girl), and $b_1$ applies when sex = 1 (boy).
+
+$e_{ij}$ : Residual error terms, which are mutually independent according to the problem description.
+
+Now let's write this model in the marginal form. To recap Lecture 11, marginal models separately model the mean responses and within-subject association among the repeated responses.
+
+Based on the expectation of the model about the random effects ($\alpha_i$, $b_0$ $b_1$, and $e_{ij}$) at a population level, we can say that all of the random terms have mean zero and are mutually independent. Therefore, we can remove them for the marginal model. Hence, marginal model with the expected value of $Y_{ij}$ is the following:
+
+$$\mathbb{E}[Y_{ij}] = \beta_0 + \beta_1 \cdot \text{age}_{ij}$$
+
+To calculate the variance, first we must note that $a_i$ varies by each child, $b_0$ applies for girl participants, $b_1$ applies for boy particpants, and $e_ij$ is individual level noise. These four coefficients are independent, so the variance of each observation is the sum of the variances of the random effects (assuming that both $b_0$ and $b_1$ have a variance of $\sigma^2_b$).
+
+$$Var(Y_{ij}) = \sigma^2_a + \sigma^2_b + \sigma^2_e$$
+
+For any two observations from the same child ($i$) at different ages ($j$, $k$), their covariance will be the following, since the two observations will share the same baseline, or intercept, and the same sex.
+
+$$Cov(Y_{ij}, Y_{ik}) = cov(a_i + b_i + e_{ij}, a_i + b_i + e_{ij}) = \sigma^2_a + \sigma^2_b$$
+
+Correlation between two variables is calculated by dividing their covariance by the product of their standard deviations. Since we assume the variances are the same across observations, then the correlation would follow the following formula.
+
+$$corr(Y_{ij}, Y_{ik}) =\frac{Cov(Y_{ij}, Y{ik})}{\sqrt{Var(ij) \cdot Var(ik)}} $$
+
+Autoregressive correlation (correlation within multiple observations from the same subject):
+
+$$corr(Y_{ij}, Y_{ik}) = \frac{\sigma^2_b}{\sigma^2_a + \sigma^2_b + \sigma^2_e}$$
+
+**(c) Consider the following marginal model:** 
+
+$$E(Y_{ij}) = β_0 + β_1 · sex_i + β_2 · age_{ij}$$
+$$Var(Y_i) = Σ$$
+
+**Fit a model with (a) compound symmetry covariance, (b) exponential covariance, (c) autoregressive covariance. Compare the coefficient parameter estimates and the covariance estimates.**
+
+First, let's convert the `dental` dataframe to grouped data.
+```{r}
+# Convert dental df to grouped data
+dental.new = dental |> 
+  mutate(gender = ifelse(gender == "girl", 0, 1)) |> 
+  arrange(child, age) |> 
+  as.data.frame() |> 
+  groupedData(distance ~ age | child, data = _)
+
+dental.new |> head()
+```
+
+Let's briefly visualize the `dental.new` grouped data.
+```{r}
+plot(dental.new)
+```
+
+Next, let's visualize the data again through a spaghetti plot, this time without faceting the plot by gender, as well as some boxplots to see the distribution of distance by age and gender. Based on this exploratory data analysis, we can estimate that there might be a positive trend between age and distance, and that boy participants may on average have higher distance.
+```{r}
+ggplot(dental.new, aes(x = age, y = distance, group = child)) +
+  geom_line(color = "cornflowerblue") +
+  geom_point(color = "darkslateblue") +
+  labs(
+    title = "Distance vs. Age and Gender",
+    caption = "* Distance (mm) from the center of the pituitary to the pterygomaxillary fissure.",
+    x = "Age",
+    y = "Distance (mm) *"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10)
+  )
+```
+
+```{r}
+boxplot(distance ~ age, data = dental.new,
+        main = "Distribution of Distance by Age",
+        xlab = "Age",
+        ylab = "Distance (mm)")
+boxplot(distance ~ gender, data = dental.new,
+        main = "Distribution of Distance by Gender",
+        xlab = "Gender (0=girl, 1=boy)",
+        ylab = "Distance (mm)")
+```
+
+
+**(a) Fitting a model with compound symmetry covariance.**
+
+Compound symmetry means that all the variances are equal and all covariances are equal within a group (within an individual child's multiple measurements), regardless of how far apart in time the observations were recorded.
+```{r}
+fit.cs = gls(distance ~ age + gender,
+          data = dental.new,
+          correlation = corCompSymm(form = ~1|child),
+          method = "REML")
+
+summary(fit.cs)
+```
+
+
+**(b) Model with exponential covariance**
+
+The Exponential covariance pattern shows how the correlation or covariance between two observations decreases exponentially as the time between them increases.
+```{r}
+fit.exp = gls(distance ~ gender + age,
+              data = dental.new,
+              correlation = corExp(form = ~age|child))
+
+summary(fit.exp)
+```
+
+**(c) Model with autoregressive covariance**
+
+The Autoregressive covariance pattern also assumes that the correlation or covariance between two observations increases as the time between them increases.
+```{r}
+fit.ar = gls(distance ~ gender + age,
+              data = dental.new,
+              correlation = corAR1(form = ~age|child))
+
+summary(fit.ar)
+```
+
+**Comparing models:** The AIC scores of the three models differ noticeably. The model with the lowest AIC score is the first model, with compound symmetry covariance. This could suggest that the simplest model is sufficient for explaining the relationship between distance and gender and age in the dataset, and that covariance does not increase as the time between two observations increases.
+```{r}
+cat("AIC of the models.", "\n",
+    "Compound Symmetry Covariance Model:\t", AIC(fit.cs), "\n",
+    "Exponential Covariance Model:\t\t", AIC(fit.exp), "\n",
+    "Autoregressive Covariance Model:\t", AIC(fit.ar))
+```
+
+**Comparing coefficient parameter estimates:** Based on the p-values shown in the model summaries above, all coefficient estimates are statistically significant. All three models have similar intercept values. The compound symmetry covariance model assigns a higher coefficient to gender than to age, and the other models do the opposite.
+```{r}
+cat("Model Coefficients (Intercept, Age, Gender).", "\n",
+    "Compound Symmetry Covariance Model:\t", coef(fit.cs), "\n",
+    "Exponential Covariance Model:\t\t", coef(fit.exp), "\n",
+    "Autoregressive Covariance Model:\t", coef(fit.ar))
+```
+
+**Comparing covariance estimates:** The `vcov()` function gives us the variance-covariance matrix of the fixed effect estimates of the three models. The variances, on the digagonals, tell us how certain or uncertain the model is about each coefficient. Smaller variance values tell us that there is more precision in the coefficient estimates. The covariances, off the diagonals, tell us how the coefficients are statistically associated with each other.
+
+Examining the variance values in the variance-covariance matrices below for the three models, we can see that the intercept and age coefficient are  most precisely estimated by the `fit.cs` model, and the gender coefficient seems to be most precisely estimated by the `fit.ar` model.
+
+Examining the covariances, we can see that age and gender have very low covariance in all three models. Covariance between age and intercept is negative for all three models, and has the highest absolute value for the `fit.ar` model and lowest in the `fit.cs` model. Covariance between gender and intercept has a higher absolute value than covariance between age and intercept in all three models. Gender / Intercept covariance has the highest absolute value in the `fit.cs` model.
+
+Overall, the compound symmetry model, `fit.cs`, has the most precise estimates overall, especially for age. It is understandable why it also has the best AIC among the three models, given that we are examining a growth model in this problem. The exponential covariance model, `fit.exp`, has higher variances for all three coefficients and thus does not provide any advantages at all. Finally, the autoregressive covariance model offers a more precise estimate for gender, but not for age or the intercept.
+
+```{r}
+# Compound Symmetry Covariance Model
+vcov(fit.cs)
+
+# Exponential Covariance Model
+vcov(fit.exp)
+
+# Autoregressive Covariance Model
+vcov(fit.ar)
+```
+

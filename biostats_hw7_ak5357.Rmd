@@ -1,0 +1,435 @@
+---
+title: "Biostatistical Methods II Homework 7"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(gtsummary)
+library(ggplot2)
+library(nlme)
+library(lme4)
+```
+
+#### **PLEASE NOTE:**
+
+ALL DECIMALS HAVE BEEN ROUNDED TO TWO PLACES THROUGHOUT THE DOCUMENT using in-line R wherever I am interpreting coefficients. If there is any value with 0 or 1 decimals, that is not an error, just a formatting difference.**
+
+
+## **Problem 1**
+
+**A linguistic study investigates how voice pitch relates to different levels of formality in speech and the speaker’s gender. The study involves two formality levels: formal speech (addressing authority figures) and informal speech (addressing peers). Additionally, gender is included as a fixed effect. Each participant provided multiple voice recordings across various conversational contexts, such as formally asking a professor for help or informally asking a friend. Note that pitch measurements taken from the same participant or within the same conversational context may be correlated.**
+
+```{r}
+polite = read_csv("data/HW7-politeness_data.csv")
+
+# Summary Statistics
+polite |>
+  tbl_summary(
+    statistic = list(all_continuous() ~ "{min} - {max} | {mean} ({sd})",
+                     all_categorical() ~ "{n} ({p}%)"))
+
+```
+
+**(a) Conduct an exploratory analysis using boxplots to illustrate how pitch varies according to gender and formality levels, disregarding specific conversational contexts.**
+
+**Boxplot of how pitch varies by formality level.** Based on the boxplots below, we can see that while there is a lot of overlap in pitch across the different formality levels, the min, max, Q1, Q2, and median pitch are all higher for the informal formality level. This indicates that on average, disregarding gender, informal formality level could possibly be associated with higher pitch.
+
+```{r}
+polite |> 
+  mutate(attitude = ifelse(attitude == "inf", "Informal", "Polite")) |> 
+  ggplot(aes(x = attitude, y = frequency, fill = attitude)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Distribution of Pitch by Formality Level",
+    x = "Formality Level",
+    y = "Pitch (frequency)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10),
+    legend.position = "none"
+  )
+```
+
+**Boxplot of how pitch varies by gender.** Based on the boxplots below, we can see that there is not much overlap in pitch between Male and Female participants. On average, the pitch for female participants is noticeably much higher than for male participants, disregarding formality level. This indicates that female gender could potentially be associated with higher pitch on average than male gender.
+```{r}
+polite |> 
+  mutate(gender = ifelse(gender == "F", "Female", "Male")) |> 
+  ggplot(aes(x = gender, y = frequency, fill = gender)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(
+    title = "Distribution of Pitch by Gender",
+    x = "Gender",
+    y = "Pitch (frequency)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10),
+    legend.position = "none"
+  )
+```
+
+**Boxplot of how pitch varies by both gender and formality level gender.** For both formality levels, pitch is higher on average among female participants than among male participants. For female participants, pitch is higher on average for informal formality level. For male participants, the range of pitch for informal formality level falls within the range of pitch for polite formality level. While the median pitch is lower for males at the polite formality level, there is not as clear of an indication for male gender whether informal formality level could potentially be associated with higher pitch.
+```{r}
+polite |> 
+  mutate(
+    attitude = ifelse(attitude == "inf", "Informal", "Polite"),
+    gender = ifelse(gender == "F", "Female", "Male")) |> 
+  ggplot(aes(x = attitude, y = frequency, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Pitch by Formality Level and Gender",
+    x = "Formality Level",
+    y = "Pitch (frequency)",
+    fill = "Gender"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10)
+  )
+```
+
+**(b) Construct a mixed-effects regression model incorporating random intercepts for individual participants, with gender and formality as fixed effects. Describe the covariance matrix structure for the observations of an individual participant (Yi). Additionally, specify the covariance matrix structure for the fixed effect parameter estimates (a 3 ×3 matrix representing intercept, gender, and formality). Compute the Best Linear Unbiased Predictors (BLUPs) for participant-specific random intercepts and determine the residuals.**
+
+**Constructing a mixed-effects regression model incorporating:**
+
+* Fixed effects for gender and formality
+* Random intercepts for individual participants
+
+```{r}
+# Convert data frame into groupedData
+polite.new = groupedData(frequency ~ attitude | subject, data = as.data.frame(polite))
+
+# Generate linear mixed effects fit
+fit.lme = lme(frequency ~ gender + attitude, # fixed effecs
+              random = ~ 1 | subject, #random intercept by subject
+              data = polite.new)
+
+# Output model summary
+summary(fit.lme)
+```
+
+Our results show the following model:
+
+$$Y_{ij} = \beta_0 + \alpha_i + \beta_1 \cdot genderM + \beta_2 \cdot attitudePol + \epsilon_{ij}$$
+
+where:
+
+* $Y_{ij}$ = pitch measured for $i$th individual's $j$th observation.
+* $\beta_0$ = fixed intercept
+* $\alpha_i$ = random intercept for $i$th individual
+* $\beta_1$ = coefficient for gender = Male (reference category gender = Female)
+* $\beta_2$ = coefficient for attitude = polite (reference category attitude = informal)
+* $\epsilon_{ij}$ = error residual for $i$th individual's $j$th observation
+
+Let's interpret the coefficients of the model. Based on the fixed coefficients below, we can say the following:
+
+* **$\beta_0$ = `r fit.lme$coefficients$fixed["(Intercept)"] |> round(2)`**: Fixed intercept, or expected frequency for the reference category of participants where gender = 0 (Female) and attitude = 0 (Informal), on average at the population level, is `r fit.lme$coefficients$fixed["(Intercept)"] |> round(2)`.
+* **$\beta_1$ = `r fit.lme$coefficients$fixed["genderM"] |> round(2)`**: On average at the population level, Male gender is associated with having `r abs(fit.lme$coefficients$fixed["genderM"]) |> round(2)` units lower pitch as compared to Female gender, with all other predictors held constant.
+* **$\beta2$ = `r fit.lme$coefficients$fixed["attitudepol"] |> round(2)`**: On average at the population level, Polite attitude is associated with having `r abs(fit.lme$coefficients$fixed["attitudepol"]) |> round(2)` units lower pitch as compared to Informal attitude, with all other predictors held constant.
+
+```{r}
+fit.lme$coefficients$fixed
+```
+
+Let's interpret the rest of the coefficients now.
+
+* **$\alpha_i$:** The random intercept by subject. This shows each subject's individual level deviation from the fixed intercept of `r fit.lme$coefficients$fixed["(Intercept)"] |> round(2)`, which aren't captured by gender or attitude. For example, subject M7 tends to have `r abs(fit.lme$coefficients$random$subject[1]) |> round(2)` units lower pitch than the average for their group, after accounting for gender and attitude.
+```{r}
+fit.lme$coefficients$random$subject
+```
+
+Overall, this model tells us that pitch varies by gender and formality, with male gender and polite attitude have a statistically significant (based on p-values) negative correlation with voice pitch. Additionally, each subject has their own baseline pitch level, shown through the random intercepts.
+
+**Describing covariance matrix structure for the observations of an individual participant $Y_i$.**
+
+The model includes a random intercept, but no random effects by the predictors, for each participant. This implies a compound symmetry covariance structure for repeated observations of an individual participant. In this structure, all repeated observations for any subject have equal variance, equal pairwise covariance, and therefore equal correlation. In other words, the variance covariance matrix for repeated observations of a single individual, $Y_i$, would have equal values along the diagonal as well as equal values in the off-diagonal areas.
+
+```{r}
+VarCorr(fit.lme)
+```
+
+
+**Specifying the covariance matrix structure for fixed effect parameter estimates.**
+
+To contextualize the values in the matrix below, consider that the standard deviation of the response variable (frequency) in this dataset is `r sd(polite$frequency) |> round(2)`, and its variance is `r var(polite$frequency) |> round(2)`. In comparison, the variances of the fixed effect estimates shown below are quite small. This suggests that the model is producing reasonably precise estimates of these fixed effects, relative to the overall variability in the response variable.
+
+Next, let's interpret the covariance values shown below. The covariance between gender and attitude is `r vcov(fit.lme)[["genderM","attitudepol"]]`. This shows that there is no linear relationship between the two predictors, suggesting that there is no multicollinearity between gender and attitude. We also see negative covariances between the intercept and both genderM (`r vcov(fit.lme)[["(Intercept)", "genderM"]] |> round(2)`) and attitudePol (`r vcov(fit.lme)[["(Intercept)", "attitudepol"]] |> round(2)`). This suggests that when the estimated population-level baseline pitch increases, the estimated effects of both Male gender and polite attitude on pitch tend to decrease, and vice versa.
+
+```{r}
+vcov(fit.lme)
+```
+
+**Computing Best Linear Unbiased Predictor (BLUP) for participant-specific random intercepts and determining the residuals.**
+
+BLUPs and residuals can both be accessed from the model lme object, so there's not really anything to compute here. Below, I have listed these BLUPs and residuals. I have also calculated RMSE.
+
+Here are the participant-specific random intercepts.
+```{r}
+fit.lme$coefficients$random$subject
+```
+
+Here are the fitted values for each participant, estimated using both the fixed effects and the random intercept.
+```{r}
+fit.lme$fitted |>
+  as_tibble() |> 
+  rename(fitted = subject) |> 
+  select(fitted)
+```
+
+And here are the residuals.
+```{r}
+fit.lme$residuals[,2] |> 
+  as_tibble()
+```
+
+Here is the overall RMSE, calculated from these residuals.
+```{r}
+fit.lme_RMSE = fit.lme$residuals[,2] |> 
+  as_tibble() |> 
+  mutate(res_sq = value^2) |> 
+  pull(res_sq) |> 
+  mean()
+
+fit.lme_RMSE
+```
+
+Here is the RMSE by participant, in case anyone wants to know.
+```{r}
+polite |> 
+  bind_cols(
+    as_tibble(fit.lme$fitted[,2]) |> rename(pred = value),
+    as_tibble(fit.lme$residuals[,2]) |> rename(resid = value)
+  ) |> 
+  mutate(resid_sq = resid^2) |> 
+  group_by(subject) |> 
+  summarize(
+    rmse = mean(resid_sq)
+  )
+```
+
+**(c) Expand the mixed-effects model from part (b) by including an interaction between gender and formality as fixed effects, while retaining random intercepts for participants. Perform a likelihood ratio test to assess whether this interaction significantly explains variability in pitch compared to the simpler model in part (b).**
+
+**Generate model with new interaction term.**
+
+Based on the summary of the model below, it appears that the interaction term for gender and attitude is not statistically significant, as it has a p-value greater than 0.05. 
+
+```{r}
+# Generate linear mixed effects fit
+fit.lme.int = lme(frequency ~ gender * attitude, # fixed effects with interaction
+              random = ~ 1 | subject, #random intercept by subject
+              data = polite.new)
+
+# Output model summary
+summary(fit.lme.int)
+```
+
+Our results show the following model:
+
+$$Y_{ij} = \beta_0 + \alpha_i + \beta_1 \cdot genderM + \beta_2 \cdot attitudePol + \beta_3 \cdot genderM \cdot attitudePol + \epsilon_{ij}$$
+
+where:
+
+* $Y_{ij}$ = pitch measured for $i$th individual's $j$th observation.
+* $\beta_0$ = fixed intercept
+* $\alpha_i$ = random intercept for $i$th individual
+* $\beta_1$ = coefficient for gender = Male (reference category gender = Female)
+* $\beta_2$ = coefficient for attitude = polite (reference category attitude = informal)
+* $\beta_3$ = coefficient for the interaction term of gender and attitude, only "activated" when gender = Male and attitude = polite
+* $\epsilon_{ij}$ = error residual for $i$th individual's $j$th observation
+
+Let's interpret the coefficients of the model. Based on the fixed coefficients below, we can say the following:
+
+* **$\beta_0$ = `r fit.lme.int$coefficients$fixed["(Intercept)"] |> round(2)`**: Fixed intercept, or expected frequency for the reference category of participants where gender = 0 (Female) and attitude = 0 (Informal), on average at the population level, is `r fit.lme.int$coefficients$fixed["(Intercept)"] |> round(2)`.
+* **$\beta_1$ = `r fit.lme.int$coefficients$fixed["genderM"] |> round(2)`**: On average at the population level, Male gender is associated with having `r abs(fit.lme.int$coefficients$fixed["genderM"]) |> round(2)` units lower pitch as compared to Female gender, with all other predictors held constant.
+* **$\beta2$ = `r fit.lme.int$coefficients$fixed["attitudepol"] |> round(2)`**: On average at the population level, Polite attitude is associated with having `r abs(fit.lme.int$coefficients$fixed["attitudepol"]) |> round(2)` units lower pitch as compared to Informal attitude, with all other predictors held constant.
+* **$\beta3$ = `r fit.lme.int$coefficients$fixed["genderM:attitudepol"] |> round(2)`**: On average at the population level, having both Male gender and Polite attitude is associated with having `r abs(fit.lme.int$coefficients$fixed["genderM:attitudepol"]) |> round(2)` units higher pitch as compared to any other combination of gender and attitude.
+
+```{r}
+fit.lme.int$coefficients$fixed
+```
+
+Let's interpret the rest of the coefficients now.
+
+* **$\alpha_i$:** The random intercept by subject. This shows each subject's individual level deviation from the fixed intercept of `r fit.lme.int$coefficients$fixed["(Intercept)"] |> round(2)`, which aren't captured by gender or attitude. For example, subject M4 tends to speak at a pitch `r abs(fit.lme.int$coefficients$random$subject[3]) |> round(2)` units higher than the average for their group, after accounting for gender and attitude.
+```{r}
+fit.lme.int$coefficients$random$subject
+```
+
+When comparing the random intercepts of the interactions model with the simpler model, we can see that the random intercepts in the interactions model are slightly more extreme (farther from 0). This indicates that individual level baselines deviate more from the fixed effects-based frequency estimate in the interactions model than the simple model.
+
+```{r}
+fit.lme$coefficients$random$subject |> 
+  as.data.frame() |> 
+  rownames_to_column() |> 
+  as_tibble() |> 
+  rename(
+    Subject = rowname,
+    `Simple Model` = `(Intercept)`) |> 
+  bind_cols(fit.lme.int$coefficients$random$subject) |> 
+  rename(`Interactions Model` = `(Intercept)`) |> 
+  mutate(Difference = `Interactions Model` - `Simple Model`) |> 
+  knitr::kable()
+```
+
+**Likelihood ratio test.**
+
+Since we must use "ML" as the method when generating the model, in order to do the likelihood ratio test, let us regenerate the models.
+
+```{r}
+# Generate linear mixed effects fit
+fit.lme.2 = lme(frequency ~ gender + attitude, # fixed effecs
+              random = ~ 1 | subject, #random intercept by subject
+              data = polite.new,
+              method = "ML")
+
+# Generate linear mixed effects fit with interaction
+fit.lme.int.2 = lme(frequency ~ gender * attitude, # fixed effecs
+              random = ~ 1 | subject, #random intercept by subject
+              data = polite.new,
+              method = "ML")
+```
+
+Now let's compare the models through a likelihood ratio test. Here are our hypotheses guiding this test.
+
+$H_0$: The simpler model (`fit.lme.2`) is just as good as the more complex model with the interaction (`fit.lme.int.2`).
+
+$H_1$: The model with the interaction term (`fit.lme.int.2`) fits the data better than the simpler model (`fit.lme.2`), and so the interaction terms are necessary.
+
+```{r}
+lrt = anova(fit.lme.2, fit.lme.int.2)
+lrt
+```
+
+The p-value outputted by this test is not significant at the level $\alpha$ = 0.05, so we fail to reject the null hypothesis. We can conclude that the simpler model (`fit.lme.2`) fits the data just as well.
+```{r}
+lrt$`p-value`
+```
+
+In conclusion, the model with interactions does not significantly explain variability in pitch compared to the simpler model, so we do not need the interaction term in our model.
+
+**(d) Specify and fit a mixed-effects model incorporating random intercepts for both individual participants and conversational contexts, with gender and formality as fixed effects, using the lmer() function from the lme4 package in R. Present the covariance matrix for a participant (Yi) according to this model. Explain  the practical interpretation of the regression coefficient associated with the fixed effect of formality.**
+
+**Specifying the model.**
+
+Note that `scenario` is a categorical variable, so including it in the equation will require the addition of six dummy variables along with their respective random effect coefficients.
+
+$$
+\begin{align*}
+Y_{ij} &= \beta_0 + \alpha_i + \beta_1 \cdot \text{genderM} + \beta_2 \cdot \text{attitudePol} \\
+       &\quad + b_{1i} \cdot \text{scenario2} + b_{2i} \cdot \text{scenario3} + b_{3i} \cdot \text{scenario4} \\
+       &\quad + b_{4i} \cdot \text{scenario5} + b_{5i} \cdot \text{scenario6} + b_{6i} \cdot \text{scenario7} + \epsilon_{ij}
+\end{align*}
+$$
+where:
+
+* $Y_{ij}$ = pitch measured for $i$th individual's $j$th observation.
+* $\beta_0$ = fixed intercept
+* $\alpha_i$ = random intercept for $i$th individual
+* $\beta_1$ = fixed effect estimate for gender = Male (reference category gender = Female)
+* $\beta_2$ = fixed effect estimate for attitude = polite (reference category attitude = informal)
+* $b_{i1}$ = random effect estimate for scenario 2 (reference category scenario = 1)
+* $b_{i2}$ = random effect estimate for scenario 3 (reference category scenario = 1)
+* $b_{i3}$ = random effect estimate for scenario 4 (reference category scenario = 1)
+* $b_{i4}$ = random effect estimate for scenario 5 (reference category scenario = 1)
+* $b_{i5}$ = random effect estimate for scenario 6 (reference category scenario = 1)
+* $b_{i6}$ = random effect estimate for scenario 7 (reference category scenario = 1)
+* $\epsilon_{ij}$ = error residual for $i$th individual's $j$th observation
+
+**Fitting a mixed-effects model using `lmer()` with:**
+
+* Random intercepts for individual participants (`subject`) and conversational contexts (`scenario`)
+* Fixed effects for `gender` and formality (`attitude`)
+
+```{r}
+# Generate model
+fit.lmer = polite.new |> 
+  mutate(scenario = as.factor(scenario)) |> # ensure scenario is categorical
+  lmer(frequency ~ gender + attitude + (1 + scenario | subject),
+     data = _)
+
+# Output summary
+summary(fit.lmer)
+```
+
+Let's interpret the coefficients for the fixed intercept and effects.
+
+| Coefficient | Estimate | Interpretation |
+| --- | --- | --- |
+| $\beta_0$ | `r round(fixef(fit.lmer)[1], 2)` | (Fixed Intercept) The expected pitch on average at the population level for the reference category of participants where gender = 0 (Female) and attitude = 0 (Informal) is `r round(fixef(fit.lmer)[1], 2)` units. |
+| $\beta_1$ | `r round(fixef(fit.lmer)[2], 2)` | On average at the population level, Male gender is associated with having `r round(abs(fixef(fit.lmer)[2]), 2)` units lower pitch compared with having Female gender. |
+| $\beta_2$ | `r round(fixef(fit.lmer)[3], 2)` | On average at the population level, Polite attitude is associated with having `r round(abs(fixef(fit.lmer)[3]), 2)` units lower pitch compared with Informal attitude |
+
+Let's interpret the coefficients for the random intercept and effects.
+
+| Coefficient | Estimate | Example Interpretation (Subject M3) |
+| --- | --- | --- |
+| $\alpha_i$ | `r round(coef(fit.lmer)$subject[2,]["(Intercept)"], 2)` | (Random Intercept) Subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["(Intercept)"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[7]` pitch than the average for their group, after accounting for gender and attitude. |
+| $b_{i1}$ | `r round(coef(fit.lmer)$subject[2,]["scenario2"], 2)` | In scenario 2, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario2"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[1]` pitch than in scenario 1. |
+| $b_{i2}$ | `r round(coef(fit.lmer)$subject[2,]["scenario3"], 2)` | In scenario 3, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario3"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[2]` pitch than in scenario 1. |
+| $b_{i3}$ | `r round(coef(fit.lmer)$subject[2,]["scenario4"], 2)` | In scenario 4, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario4"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[3]` pitch than in scenario 1. |
+| $b_{i4}$ | `r round(coef(fit.lmer)$subject[2,]["scenario5"], 2)` | In scenario 5, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario5"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[4]` pitch than in scenario 1. |
+| $b_{i5}$ | `r round(coef(fit.lmer)$subject[2,]["scenario6"], 2)` | In scenario 6, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario6"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[5]` pitch than in scenario 1. |
+| $b_{i6}$ | `r round(coef(fit.lmer)$subject[2,]["scenario7"], 2)` | In scenario 7, subject M3 tends to have `r round(abs(coef(fit.lmer)$subject[2,]["scenario7"]), 2)` units `r ifelse(sign(coef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[6]` pitch than in scenario 1. |
+
+**Presenting the covariance matrix for a participant (Yi) according to this model.**
+
+Here is the covariance matrix for a participant $Y_i$ according to this model.
+```{r}
+VarCorr(fit.lmer)$subject |>
+  as.data.frame()
+```
+
+For comparison, here is the variance-covariance matrix for the fixed effects.
+```{r}
+vcov(fit.lmer)
+```
+
+We can see that the variances and covariances for the random effects seem more extreme (farther from 0) among the random effects than among the fixed effects. This indicates that, in general, the model provides more precise estimates for the fixed effects than the random effects, and that there is more covariance among the random effects than there is among the fixed effects. Additionally, it would make sense if the covariances between the scenario dummy variables are relatively high, as those variables are mutually exclusive.
+
+The following table shows just the variances of the random effects. The variances for scenario 6 and 7 are much lower than for the other scenarios. Overall, the variances indicate that the model provides the most precise effect estimates for attitude, scenario6, scenario7, fixed intercept, and gender.
+```{r}
+vcov(fit.lmer) |>
+  as.matrix() |> 
+  as.data.frame() |>
+  rownames_to_column("term") |>
+  pivot_longer(-term, names_to = "term2", values_to = "covariance")|> 
+  filter(term == term2) |> 
+  rename(variance = covariance) |> 
+  mutate(effect_type = "fixed") |> 
+  bind_rows(
+    VarCorr(fit.lmer)$subject |>
+      as.data.frame() |> 
+      rownames_to_column("term") |>
+      pivot_longer(-term, names_to = "term2", values_to = "covariance") |> 
+      filter(term == term2) |> 
+      rename(variance = covariance) |> 
+      mutate(effect_type = "random")
+  ) |> 
+  select(term, effect_type, variance) |> 
+  arrange(variance) |> 
+  knitr::kable(digits = 2)
+
+```
+
+**Explaining  the practical interpretation of the regression coefficient associated with the fixed effect of formality.**
+
+The fixed effect estimates for the lmer model are shown below.
+```{r}
+fixef(fit.lmer)
+```
+
+A practical interpretation of the formality coefficient would be: On average, polite attitude is associated with `r abs(fixef(fit.lmer)["attitudepol"]) |> round(2)` fewer units of pitch compared to informal attitude, holding gender and scenario constant.
