@@ -1,0 +1,200 @@
+---
+title: "Biostatistical Methods II Homework 8"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+
+library(nlme)
+library(lme4)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(glue)
+library(gee)
+```
+
+
+```{r}
+# Read in Data
+health = read_xlsx("data/HW8-HEALTH.xlsx") |> 
+  janitor::clean_names() |> 
+  mutate( # alter variable values to improve interpretability
+    time = ifelse(time %in% c(1:3), (time - 1)*3, 12),
+    trt = as.factor(txt),
+    health = ifelse(health == "Poor", 0, 1),
+    agegroup = as.factor(agegroup)) |>  # convert to months since randomization
+  select(-txt) |> 
+  arrange(id, time)
+
+# Convert to grouped data
+health.new = groupedData(health ~ trt | id, data = health)
+```
+
+#### **Exploratory Visualization**
+
+The following figure shows how the proportion of good health self-reports appears to change over time for the intervention group, but not as much for the control group, suggesting a possible interaction between treatment group and time.
+```{r}
+health |> 
+  mutate(
+    health = factor(health, labels = c("Poor", "Good")),
+    time = as.factor(time)) |> 
+  ggplot(aes(x = time, fill = health, group = health)) +
+  geom_bar(position = "dodge") +
+  facet_grid(~ trt) +
+  labs(
+    title = "Self-Reported Health by Time and\nRandomized Treatment Group",
+    x = "Time Since Randomization (months)",
+    y = "Count",
+    fill = "Self-Reported Health:"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 12),
+    plot.subtitle = element_text(face = "italic", hjust = 0.5, size = 10),
+    plot.caption = element_text(hjust = 0.5),
+    axis.title = element_text(size = 10),
+    legend.position = "bottom"
+  )
+```
+
+
+_____
+
+**Problem:** Fit a generalized linear mixed effects model with subject-specific random intercepts. Interpret your estimates. How are the interpretations different from the GEE model?
+
+_____
+
+#### **Generalized Linear Mixed Effects Model (GLMER)**
+
+We are generating the following model. Since the outcome variable is binary, this will be a logistic regression model. _Note: The agegroup terms only have the subscript for $i$ because each individual's agegroup does not change throughout the dataset._
+
+$$
+\begin{align*}
+logit(Pr(Y_{ij} = 1)) &=  \beta_0 + \alpha_i + \beta_1 \cdot (\text{agegroup25-34})_i + \beta_2 \cdot (\text{agegroup35+})_i + \beta_3 \cdot \text{trtIntervention}\\
+                      &\quad + \beta_4 \cdot \text{time}_{ij} + \beta_5 \cdot (\text{trtIntervention} \cdot \text{time}) + \epsilon_{ij}
+\end{align*}
+$$
+where:
+
+* $Y_{ij}$ = binary outcome of self-reported health (0 = Poor, 1 = Good) for $i$th participant's $j$th observation
+* $logit(p)$ = $log\left(\frac{p}{1-p}\right)$ link function for probability of $Y_{ij} = 1$ (or `health` = Good)
+* $\beta_0$ = fixed intercept
+* $\alpha_i$ = random intercept for $i$th individual
+* $\beta_1$ = fixed coefficient for agegroup = 25-34 (reference category agegroup = 15-24)
+* $\beta_2$ = fixed coefficient for agegroup = 35+ (reference category agegroup = 15-24)
+* $\beta_3$ = fixed coefficient for treatment group trt = Intervention (reference category trt = Control)
+* $\beta_4$ = fixed coefficient for time (months) passed since randomization
+* $\beta_4$ = fixed coefficient for interaction between treatment and time (months) passed since randomization
+
+**Fitting the model**
+
+I chose to include the interaction term between treatment and time due to the results of the Likelihood Ratio Test performed below.
+
+Model with no interaction.
+```{r}
+# Generate linear mixed effects fit
+fit.glmer = glmer(health ~ agegroup + trt + time + (1 | id),
+              data = health.new,
+              family = binomial)
+
+# Output model summary
+summary(fit.glmer)
+```
+
+Model with interaction.
+```{r}
+# Generate linear mixed effects fit WITH interaction term
+fit.glmer.int = glmer(health ~ agegroup + trt * time + (1 | id),
+              data = health.new,
+              family = binomial)
+
+# Output model summary
+summary(fit.glmer.int)
+```
+
+Likelihood Ratio Test. Since the p-value is significant, we reject the null hypothesis that the simpler (no interactions) model is just as good. We conclude that the interaction term is necessary for this model.
+```{r}
+# Is the interaction term significant?
+anova(fit.glmer, fit.glmer.int)
+
+# Then we decide to keep the model with interactions.
+fit.glmer = fit.glmer.int
+```
+
+#### **Interpreting the GLMER model coefficients**
+
+Let's interpret the fixed coefficients first.
+
+| Coefficient | Term | Estimate (Log Odds Ratio) | Odds Ratio | 
+| --- | --- | --- | --- |
+| $\beta_0$ | (Intercept)     | `r fixef(fit.glmer)[1] |> round(2)` | `r exp(fixef(fit.glmer))[1] |> round(2)` |
+| $\beta_1$ | agegroup25-34   | `r fixef(fit.glmer)[2] |> round(2)` | `r exp(fixef(fit.glmer))[2] |> round(2)` |
+| $\beta_2$ | agegroup35+     | `r fixef(fit.glmer)[3] |> round(2)` | `r exp(fixef(fit.glmer))[3] |> round(2)` |
+| $\beta_3$ | trtIntervention | `r fixef(fit.glmer)[4] |> round(2)` | `r exp(fixef(fit.glmer))[4] |> round(2)` |
+| $\beta_4$ | time            | `r fixef(fit.glmer)[5] |> round(2)` | `r exp(fixef(fit.glmer))[5] |> round(2)` |
+| $\beta_5$ | trtIntervention $\cdot$ time | `r fixef(fit.glmer)[6] |> round(2)` | `r exp(fixef(fit.glmer))[6] |> round(2)` |
+
+Interpretations:
+
+* **$\beta_0$ (Intercept):** When all predictors are at their reference levels (`agegroup` = 15-24, `trt` = Control, `time` = 0), the predicted probability of the outcome is approximately `r exp(fixef(fit.glmer))[1] |> round(2)`, or `r 100*exp(fixef(fit.glmer))[1] |> round(2)`%.
+
+* **$\beta_1$ (agegroup25-34):** Having `agegroup` = 25-34 is associated with `r exp(fixef(fit.glmer))[2] |> round(2)` times the odds of reporting "Good" health, as compared to having `agegroup` = 15-24, holding all else constant.
+
+* **$\beta_2$ (agegroup35+):** Having `agegroup` = 35+ is associated with `r exp(fixef(fit.glmer))[3] |> round(2)` times the odds of reporting "Good" health, as compared to having `agegroup` = 15-24, holding all else constant.
+
+* **$\beta_3$ (trtIntervention):** Being in the `trt` = Intervention group is associated with `r exp(fixef(fit.glmer))[4] |> round(2)` times the odds of reporting "Good" health, as compared with being in the `trt` = Control group, holding all else constant.
+
+* **$\beta_4$ (time):** An increase of 1 month in time since randomization is associated with `r exp(fixef(fit.glmer))[5] |> round(2)` times the odds of reporting "Good" health, holding all else constant.
+
+* **$\beta_5$ (trtIntervention $\cdot$ time):** The exponentiated coefficient for this interaction term signifies that the change in odds of reporting good health per unit in time is `r exp(fixef(fit.glmer))[6] |> round(2)` higher in the Intervention group than in the Control group, holding all else constant.
+
+Now let's interpret the random intercepts.
+
+```{r}
+# View first 10 random intercepts
+head(ranef(fit.glmer)$id, 10)
+```
+
+| Coefficient | Term | Example Estimate for Subject 102 (Log Odds Ratio) | Odds Ratio | 
+| --- | --- | --- | --- |
+| $\alpha_i$ | Random Intercept by Subject (`id`) | $\alpha_{102}$ = `r as.data.frame(ranef(fit.glmer))$condval[1] |> round(2)` | `r exp(as.data.frame(ranef(fit.glmer))$condval[1]) |> round(2)` |
+
+**$\alpha_{102}$ (Random Intercept for Subject 102) Interpretation:** Subject 102 has `r exp(as.data.frame(ranef(fit.glmer))$condval[1]) |> round(2)` times the odds of reporting "Good" health, as compared with the average for their group, with all other terms held constant.
+
+_____
+
+#### **GEE Model**
+
+Here we are fitting a Generalized Estimation Equation (GEE) model. As compared to the GLMER model, which considers subject-specific intercepts, the GEE model is a marginal model and only considers the population-average intercepts and effects.
+
+For comparability, I will include an interaction term between treatment group and time in this model as well.
+
+```{r}
+# Generate linear mixed effects fit
+fit.gee = gee(health ~ agegroup + trt * time,
+              id = id,
+              data = health.new,
+              family = binomial,
+              corstr = "exchangeable")
+
+# Output model summary
+summary(fit.gee)
+```
+
+_____
+
+#### **How are the interpretations different?**
+
+The GLMER model includes random intercepts by subject, to account for each subject's baseline log-odds of success (self-reporting "Good" health). In this model, effects are interpreted within individuals to estimate how a change in a predictor affects the log-odds of success for a specific person.
+
+In contrast, the GEE model is a marginal model which does not include random intercepts or effects. Its results are interpreted on average at a population level to estimate how a change in some predictor affects the average log-odds of success across the whole population.
+
+For example, the interpretation of the significant interaction term `trtIntervention:time` would differ between the two models:
+
+* **GLMER Model:** For a given individual, the change in log-odds of reporting good health per unit increase in time is `r fixef(fit.glmer.int)[6] |> round(2)` higher in the Intervention group as compared to the Control group, with all else held constant. The overall log-odds of reporting good health for any individual, accounting for all predictors, would also be influenced by that individual's specific random-intercept, which represents that individual's baseline deviation from the population average intercept.
+* **GEE Model:** On average across the population, the change in log-odds of reporting good health per unit increase in time is `r coef(fit.gee)[6] |> round(2)` higher in the Intervention group as compared to the Control group, with all else held constant. This effect cannot be interpreted at the individual-level, because it does not account for individual-specific baselines in the way that GLMER does.
+

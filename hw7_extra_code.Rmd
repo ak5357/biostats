@@ -1,0 +1,129 @@
+---
+title: "Homework 7 Extra Code"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ------------------------------------------------------------------------------------------
+
+**Alternate process to the one in part (d), where we are adding a random effect for scenario, rather than a random intercept.**
+
+Note that `scenario` is a categorical variable, so including it in the equation will require the addition of six dummy variables along with their respective random effect coefficients.
+
+$$
+\begin{align*}
+Y_{ij} &= \beta_0 + \alpha_i + \beta_1 \cdot \text{genderM} + \beta_2 \cdot \text{attitudePol} \\
+       &\quad + b_{1i} \cdot \text{scenario2} + b_{2i} \cdot \text{scenario3} + b_{3i} \cdot \text{scenario4} \\
+       &\quad + b_{4i} \cdot \text{scenario5} + b_{5i} \cdot \text{scenario6} + b_{6i} \cdot \text{scenario7} + \epsilon_{ij}
+\end{align*}
+$$
+where:
+
+* $Y_{ij}$ = pitch measured for $i$th individual's $j$th observation.
+* $\beta_0$ = fixed intercept
+* $\alpha_i$ = random intercept for $i$th individual
+* $\beta_1$ = fixed effect estimate for gender = Male (reference category gender = Female)
+* $\beta_2$ = fixed effect estimate for attitude = polite (reference category attitude = informal)
+* $b_{i1}$ = random effect estimate for scenario 2 (reference category scenario = 1)
+* $b_{i2}$ = random effect estimate for scenario 3 (reference category scenario = 1)
+* $b_{i3}$ = random effect estimate for scenario 4 (reference category scenario = 1)
+* $b_{i4}$ = random effect estimate for scenario 5 (reference category scenario = 1)
+* $b_{i5}$ = random effect estimate for scenario 6 (reference category scenario = 1)
+* $b_{i6}$ = random effect estimate for scenario 7 (reference category scenario = 1)
+* $\epsilon_{ij}$ = error residual for $i$th individual's $j$th observation
+
+**Fitting a mixed-effects model using `lmer()` with:**
+
+* Random intercepts for individual participants (`subject`) and random effect for conversational contexts (`scenario`)
+* Fixed effects for `gender` and formality (`attitude`)
+
+```{r}
+# Generate model
+fit.lmer = polite.new |> 
+  mutate(scenario = as.factor(scenario)) |> # ensure scenario is categorical
+  lmer(frequency ~ gender + attitude + (1 + scenario | subject),
+     data = _,
+     REML = FALSE)
+
+# Output summary
+summary(fit.lmer)
+```
+
+```{r}
+coef(fit.lmer)
+```
+
+
+Let's interpret the coefficients for the fixed intercept and effects.
+
+| Coefficient | Estimate | Interpretation |
+| --- | --- | --- |
+| $\beta_0$ | `r round(fixef(fit.lmer)[1], 2)` | (Fixed Intercept) The expected pitch on average at the population level for the reference category of participants where gender = 0 (Female) and attitude = 0 (Informal) is `r round(fixef(fit.lmer)[1], 2)` units. |
+| $\beta_1$ | `r round(fixef(fit.lmer)[2], 2)` | On average at the population level, Male gender is associated with having `r round(abs(fixef(fit.lmer)[2]), 2)` units lower pitch compared with having Female gender. |
+| $\beta_2$ | `r round(fixef(fit.lmer)[3], 2)` | On average at the population level, Polite attitude is associated with having `r round(abs(fixef(fit.lmer)[3]), 2)` units lower pitch compared with Informal attitude |
+
+Let's interpret the coefficients for the random intercept and effects.
+
+| Coefficient | Estimate | Example Interpretation (Subject M3) |
+| --- | --- | --- |
+| $\alpha_i$ | `r round(ranef(fit.lmer)$subject[2,]["(Intercept)"], 2)` | (Random Intercept) Subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["(Intercept)"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[7]` pitch than the average for their group, after accounting for gender and attitude. |
+| $b_{i1}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario2"], 2)` | In scenario 2, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario2"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[1]` pitch than in scenario 1. |
+| $b_{i2}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario3"], 2)` | In scenario 3, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario3"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[2]` pitch than in scenario 1. |
+| $b_{i3}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario4"], 2)` | In scenario 4, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario4"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[3]` pitch than in scenario 1. |
+| $b_{i4}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario5"], 2)` | In scenario 5, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario5"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[4]` pitch than in scenario 1. |
+| $b_{i5}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario6"], 2)` | In scenario 6, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario6"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[5]` pitch than in scenario 1. |
+| $b_{i6}$ | `r round(ranef(fit.lmer)$subject[2,]["scenario7"], 2)` | In scenario 7, subject M3 tends to have `r round(abs(ranef(fit.lmer)$subject[2,]["scenario7"]), 2)` units `r ifelse(sign(ranef(fit.lmer)$subject[2,]) == 1, "higher", "lower")[6]` pitch than in scenario 1. |
+
+**Presenting the covariance matrix for a participant (Yi) according to this model.**
+
+Here is the covariance matrix for a participant $Y_i$ according to this model.
+```{r}
+VarCorr(fit.lmer)$subject |>
+  as.data.frame()
+```
+
+For comparison, here is the variance-covariance matrix for the fixed effects.
+```{r}
+vcov(fit.lmer)
+```
+
+We can see that the variances and covariances for the random effects seem more extreme (farther from 0) among the random effects than among the fixed effects. This indicates that, in general, the model provides more precise estimates for the fixed effects than the random effects, and that there is more covariance among the random effects than there is among the fixed effects. Additionally, it would make sense if the covariances between the scenario dummy variables are relatively high, as those variables are mutually exclusive.
+
+The following table shows just the variances of the random effects. The variances for scenario 6 and 7 are much lower than for the other scenarios. Overall, the variances indicate that the model provides the most precise effect estimates for attitude, scenario6, scenario7, fixed intercept, and gender.
+```{r}
+vcov(fit.lmer) |>
+  as.matrix() |> 
+  as.data.frame() |>
+  rownames_to_column("term") |>
+  pivot_longer(-term, names_to = "term2", values_to = "covariance")|> 
+  filter(term == term2) |> 
+  rename(variance = covariance) |> 
+  mutate(effect_type = "fixed") |> 
+  bind_rows(
+    VarCorr(fit.lmer)$subject |>
+      as.data.frame() |> 
+      rownames_to_column("term") |>
+      pivot_longer(-term, names_to = "term2", values_to = "covariance") |> 
+      filter(term == term2) |> 
+      rename(variance = covariance) |> 
+      mutate(effect_type = "random")
+  ) |> 
+  select(term, effect_type, variance) |> 
+  arrange(variance) |> 
+  knitr::kable(digits = 2)
+
+```
+
+**Explaining  the practical interpretation of the regression coefficient associated with the fixed effect of formality.**
+
+The fixed effect estimates for the lmer model are shown below.
+```{r}
+fixef(fit.lmer)
+```
+
+A practical interpretation of the formality coefficient would be: On average, polite attitude is associated with `r abs(fixef(fit.lmer)["attitudepol"]) |> round(2)` fewer units of pitch compared to informal attitude, holding gender and scenario constant.

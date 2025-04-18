@@ -1,0 +1,11 @@
+---
+title: "Biostatistical Methods II Homework 9"
+author: "Arghya Kannadaguli (ak5357)"
+date: "2025-04-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+```
+
