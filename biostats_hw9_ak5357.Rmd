@@ -5,7 +5,245 @@ date: "2025-04-13"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+
+library(survival)
+library(KMsurv)
+library(tidyverse)
+library(dplyr)
 ```
+
+
+## **Problem 1**
+
+**Determine the survival and density functions for a continuous survival time variable with hazard function**
+
+$$h(x) = \frac{2x}{(1 + x^2)}$$
+
+**Hint: consider the derivative of** $log(1 + x^2)$.
+
+Consider the following relationships between the hazard function $h(x)$, cumulative hazard function $H(t)$, survival function $S(t)$, and density function $f(t)$, as discussed in Lecture 17:
+
+$$S(t) = exp\left[-H(t)\right]$$
+$$H(t) = \int^t_0 h(x) dx$$
+$$f(t) = h(t) \cdot S(t)$$
+
+Since we have the hazard function $h(x)$, we can use these relationships to find the other two functions as well.
+
+_**Determine Survival Function**_
+
+Starting with the hazard function:
+
+$$h(x) = \frac{2x}{1+x^2}$$
+
+First we integrate the hazard function over the interval from 0 to $t$ to get the cumulative hazard function. Consider that the derivative of $log(1 + x^2)$ is $\frac{2x}{1+x^2}$:
+
+$$H(t) = \int^t_0 \frac{2x}{1+x^2} dx$$
+$$H(t) = log(1+t^2) - log(1+0^2)$$
+$$H(t) = log(1+t^2)$$
+Then, to find the survival function, we exponentiate the negative cumulative hazard function.
+
+$$S(t) = exp\left[-log(1+t^2)\right]$$
+$$S(t) = exp\left[log\left(\frac{1}{1+t^2}\right)\right]$$
+Here is the survival function:
+
+$$S(t) = \frac{1}{1+t^2}$$
+
+_**Determine Density Function**_
+
+Then, to find the density function, we multiply our hazard function and survival function together.
+
+$$f(t) = \frac{2t}{1+t^2} \cdot \frac{1}{1+t^2}$$
+
+Here is the density function:
+
+$$f(t) = \frac{2t}{(1+t^2)^2}$$
+
+## **Problem 2**
+
+**Use the tongue data in the R package `KMsurv`. For each tumor type (aneuploidy and diploid), plot the Kaplan-Meier curve of survival function and its pointwise 95% confidence intervals (using the log transformation). What are the estimated 1-year survival rate and 95% CI? **
+
+Here is some information about the data, from its documentation on cran. This tells us that the unit for the time column is weeks.
+
+_**Description:**_ The tongue data frame has 80 rows and 3 columns.
+_**Format:**_ This data frame contains the following columns:
+
+* `type`: Tumor DNA profile (1=Aneuploid Tumor, 2=Diploid Tumor)
+* `time`: Time to death or on-study time, weeks
+* `delta`: Death indicator (0=alive, 1=dead)
+
+_**Source:** Klein and Moeschberger (1997) Survival Analysis Techniques for Censored and truncated data, Springer. Sickle-Santanello et al. Cytometry 9 (1988): 594-599._
+
+Let's pull in the data and preview it.
+```{r}
+data(tongue)
+head(tongue)
+```
+
+_**Aneuploidy Tumors**_
+```{r}
+# View Survival Data
+tong.a = tongue[tongue$type == 1,]
+Surv(time = tong.a$time, event = tong.a$delta)
+
+# KM Survivor Function
+KM.a = survfit(Surv(time,delta)~1, data = subset(tongue, type==1), conf.type='log')
+plot(KM.a, mark.time = TRUE, 
+     xlab="Time (weeks)", ylab="Survival Probability", main="Aneuploidy Tumors KM Curve",
+     cex.lab=1.5, cex.main=1.5)
+
+# Estimated 1-year survival rate with 95% CI
+surv.a = summary(KM.a,time=52)
+surv.a
+```
+
+The 1-year (or 52-week) survival rate for aneuploidy tumors is `r round(surv.a$surv, 2)` with a 95% confidence interval of `r round(surv.a$lower, 2)` to `r round(surv.a$upper, 2)`.
+
+_**Diploid Tumors**_
+```{r}
+# View Survival Data
+tong.d = tongue[tongue$type == 2,]
+Surv(time = tong.d$time, event = tong.d$delta)
+
+# KM Survivor Function
+KM.d = survfit(Surv(time,delta)~1, data = subset(tongue, type==2), conf.type='log')
+plot(KM.d, mark.time = TRUE, 
+     xlab="Time (weeks)", ylab="Survival Probability", main="Diploid Tumors KM Curve",
+     cex.lab=1.5, cex.main=1.5)
+
+# Estimated 1-year survival rate with 95% CI
+surv.d = summary(KM.d,time=52)
+surv.d
+```
+
+The 1-year (or 52-week) survival rate for diploid tumors is `r round(surv.d$surv, 2)` with a 95% confidence interval of `r round(surv.d$lower, 2)` to `r round(surv.d$upper, 2)`. Based on this dataset, the 1-year survival rate is higher for aneuploidy tumors, suggesting that there could potentially be better prognosis for those cases.
+
+## **Problem 3**
+
+**For the following data**
+
+$$1, 2, 2, 4+, 5+, 6, 7+, 8+, 9+, 10+$$
+
+**where + denotes a right censored observation. Write out the data table and calculate the following by hand.**
+
+**(a) Find the Kaplan-Meier estimate of the survival function;**
+
+```{r}
+# Pull survival data into a tibble
+dat = tibble(
+  t.i = c(1, 2, 2, 4, 5, 6, 7, 8, 9, 10),
+  delta = c(1, 1, 1, 0, 0, 1, 0, 0, 0, 0)
+)
+
+# Check that data has been entered correctly
+Surv(time = dat$t.i, event = dat$delta)
+```
+
+Next we manipulate the tibble above to generate the Kaplan-Meier.
+```{r}
+km.table = dat |> 
+  group_by(t.i) |> 
+  summarize(d.i = sum(delta), .groups = "drop") |> # deaths for each t.i
+  mutate(n.i = sapply(t.i, function(t) sum(dat$t.i >= t))) |> # number at risk
+  filter(d.i > 0) |> # filter only death times
+  mutate(
+    csp = 1 - (d.i / n.i), # conditional survival probability at t.i
+    survival = cumprod(1 - (d.i / n.i))) # cumulative product of csp
+
+km.table |> 
+  knitr::kable(digits = 3)
+```
+
+If we were to calculate this by hand:
+
+$$\hat{S}(t) = \prod^k_{i=1} \left(1 - \frac{d_i}{n_i}\right), \quad t_k \leq t < t_{k+1}$$
+
+**At time $t_1 = 1$:**
+
+* $t_i = 1$
+* $d_i = 1$
+* $n_i = 10$
+
+Conditional survival probability at $t_1$: **$0.9$**
+
+$$1 - \left(\frac{d_i}{n_i}\right) = 1 - \frac{1}{10} = 0.9$$
+
+Survival at $t_1$: **$0.9$**
+
+$$\hat{S}(1) = 0.9$$
+
+**At time $t_2 = 2$:**
+
+* $t_i = 2$
+* $d_i = 2$
+* $n_i = 9$
+
+Conditional survival probability at $t_2$: **$0.778$**
+
+$$1 - \left(\frac{d_i}{n_i}\right) = 1 - \frac{2}{9} = 0.7778$$
+
+Survival at $t_2$: **$0.7$**
+
+$$\hat{S}(2) = 0.9 \cdot 0.7778 = 0.7$$
+
+**At time $t_3 = 6$:**
+
+* $t_i = 6$
+* $d_i = 1$
+* $n_i = 5$
+
+Conditional survival probability at $t_3$: **$0.8$**
+
+$$1 - \left(\frac{d_i}{n_i}\right) = 1 - \frac{1}{5} = 0.8$$
+
+Survival at $t_3$: **$0.56$**
+
+$$\hat{S}(6) = 0.9 \cdot 0.7778 \cdot 0.8 = 0.56$$
+
+_**Kaplan-Meier Estimator Interpretation:**_ The estimated probability that an individual survives beyond 6 units of time is 56%.
+
+**(b) Find the Nelson-Aalen estimate of the cumulative hazard function;**
+
+The Nelson-Aalen estimator is:
+$$\hat{H}(t) = \sum^k_{t_i\leq t} \frac{d_i}{n_i}$$
+Let's manipulate the previous data table to find this.
+```{r}
+na.table = km.table |> 
+  select(-c(csp, survival)) |> 
+  mutate(
+    h.t = d.i/n.i,
+    cum.h = cumsum(h.t))
+
+na.table |> 
+  knitr::kable(digits = 3)
+```
+
+If we were to calculate this by hand:
+
+$$\hat{H}(t) = \frac{1}{10} + \frac{2}{9} + \frac{1}{5}$$
+$$\hat{H}(t) = 0.1 + 0.222 + 0.2$$
+$$\hat{H}(t) = 0.522$$
+
+_**Nelson-Aalen Estimator Interpretation:**_ Based on the cumulative hazard up to 6 units of time, the estimated survival probability is about 52.2%.
+
+**(c) Find the Fleming-Harrington estimate of the survival function.**
+
+```{r}
+fa.est = na.table |> 
+  filter(t.i == 6) |> 
+  mutate(cum.h = -cum.h) |> 
+  pull(cum.h) |> 
+  exp()
+
+fa.est
+```
+
+If we were to calculate this by hand...
+
+$$S_{FH}(t) = exp\left(-\tilde{H}(t)\right)$$
+$$S_{FH}(t) = exp\left(-0.5222\right)$$
+$$S_{FH}(t) = 0.593$$
+
+_**Fleming-Harrington Estimator Interpretation:**_ The estimated probability that an individual survives beyond 6 units of time is approximately 59.3%.
 

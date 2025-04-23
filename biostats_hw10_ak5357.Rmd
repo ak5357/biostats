@@ -7,5 +7,83 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center", out.width = "90%")
+
+library(survival)
+library(tidyverse)
+library(dplyr)
 ```
+
+**The following survival data are collected with the time unit in years and + indicating right censoring.**
+
+$$1.2+, 4.3, 5.0, 5.0+, 6.1.$$
+
+**(a) Obtain the Kaplan-Meier estimator of the survival function S(t).**
+
+First let's put the data into a tibble.
+```{r}
+# Pull survival data into a tibble
+dat = tibble(
+  t.i = c(1.2, 4.3, 5.0, 5.0, 6.1),
+  delta = c(0, 1, 1, 0, 1)
+)
+
+# Check that data has been entered correctly
+s.dat = Surv(time = dat$t.i, event = dat$delta)
+s.dat
+```
+
+Let's create the Kaplan-Meier table.
+```{r}
+km.table = dat |> 
+  group_by(t.i) |> 
+  summarize(d.i = sum(delta), .groups = "drop") |> # deaths for each t.i
+  mutate(n.i = sapply(t.i, function(t) sum(dat$t.i >= t))) |> # number at risk
+  filter(d.i > 0) |> # filter only death times
+  mutate(
+    csp = 1 - (d.i / n.i), # conditional survival probability at t.i
+    survival = cumprod(1 - (d.i / n.i))) # cumulative product of csp
+
+km.table |> 
+  knitr::kable(digits = 3)
+```
+
+Next let's fit the Kaplan-Meier survival function.
+```{r}
+km = survfit(s.dat~1, conf.type = "log")
+summary(km)
+```
+
+**(b) With the above estimator, sketch the Kaplan-Meier curve.**
+
+```{r}
+plot(km, mark.time = TRUE,
+     xlab="Time (years)", ylab="Survival Probability", main="K-M Curve for Given Survival Data",
+     cex.lab=1.5, cex.main=1.5)
+```
+
+**(c) What is the median survival rate?**
+
+According to the output below, the median survival time is 5.55 years.
+```{r}
+km
+```
+
+However, if we follow the rule discussed in lecture on Tuesday, April 22 (stating that the median is the highest event time where survival is less than or equal to 0.5) then the median would be 5.0 years.
+
+```{r}
+summary(km)
+```
+
+So my final answer is that **the median is 5.0 years**.
+
+**(d) Give an estimate of the probability of survival at 5.5 years. Provide its 95% confidence interval.**
+
+**Interpret both the estimate and the 95% CI. You may refer to the following output from R.**
+
+`Call: survfit(formula = Surv(time, dead) ~ 1)`
+`time   n.risk  n.event   survival  std.err   lower 95% CI  upper 95% CI`
+`5.5    1       2         0.5       0.25      0.188         1`
+
+According to the Kaplan-Meier survival fit produced, the estimated probability that an individual survives past 5.5 years is 50%, with a 95% confidence interval of 18.8% to 100%. Because the confidence interval includes 1 (or 100%) this tells us that our estimate is uncertain likely due to there being few individuals at risk at 5.5 years.
+
 
